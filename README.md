@@ -1,7 +1,7 @@
 # Hinatazaka46Calendar
 
 日向坂46のスケジュールをGoogleカレンダーへ登録するためのアプリケーションです。  
-[こちら](https://qiita.com/ddn/items/42def5fa721e531eecdb)で紹介されている[Googleカレンダー](https://calendar.google.com/calendar/u/0?cid=dnExNGh0OW5pZWUydTIwMGc0cmtkc3VoN3NAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ)が 2023/02頃から稼働しておらず、勝手ながら本リポジトリを立ち上げました。
+[こちら](https://qiita.com/ddn/items/42def5fa721e531eecdb)で紹介されているGoogleカレンダー共有リンクが 2023/02頃から稼働しておらず、勝手ながら本リポジトリを立ち上げました。
 
 ## Googleカレンダー共有リンク
 
