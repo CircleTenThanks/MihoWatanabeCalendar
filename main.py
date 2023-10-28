@@ -284,7 +284,7 @@ if __name__ == "__main__":
     )
     service = build_calendar_api()
 
-    schedule_list = get_schedule_list(1, 20)
+    schedule_list = get_schedule_list(1, 1)
 
     if schedule_list == None:
         sys.exit()
