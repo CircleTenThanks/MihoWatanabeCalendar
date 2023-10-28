@@ -1,6 +1,6 @@
 # MihoWatanabeCalendar
-
-渡邉美穂さんのスケジュールをGoogleカレンダーへ登録するためのアプリケーションです。  
+![](img/overture.jpg)
+渡邉美穂さんのスケジュールを自身のGoogleカレンダーへ追加できるようにすることで、推し活ライフのサポートを目指しています。  
 [こちら](https://github.com/CircleTenThanks/Hinatazaka46Calendar.git)をベースに作っています。
 
 ## Googleカレンダー共有リンク
