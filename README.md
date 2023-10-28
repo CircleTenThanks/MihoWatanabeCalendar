@@ -1,13 +1,13 @@
 # MihoWatanabeCalendar
 
 渡邉美穂さんのスケジュールをGoogleカレンダーへ登録するためのアプリケーションです。  
-[こちら](https://github.com/ArgkGit/Hinatazaka46Calendar)をベースに作っています。
+[こちら](https://github.com/CircleTenThanks/Hinatazaka46Calendar.git)をベースに作っています。
 
 ## Googleカレンダー共有リンク
 
-* ご自身のGoogleアカウントに追加したい方は [こちら](https://calendar.google.com/calendar/u/0?cid=NTdmMmYyYTc2NmEzNmExOWZhZjQ3ODcwNzExNTA5OTE0ZGM4N2YzNzRmYjAzYzM4MTQwZTIyZTA2ZjdlZDFjNEBncm91cC5jYWxlbmRhci5nb29nbGUuY29t) 
+* ご自身のGoogleアカウントに追加したい方は [こちら](https://calendar.google.com/calendar/u/0?cid=MmRlNTcwZjRjM2Q4OTUzZGE3MzAwMTRlNWY4YmQyM2Q5NGE1Y2Q3NzU3ODM2M2FiOTc1OTBkODEwOTkxYjM5ZEBncm91cC5jYWxlbmRhci5nb29nbGUuY29t) 
     * うまく行かない場合は [#1](https://github.com/CircleTenThanks/Hinatazaka46Calendar/issues/1) へ
-* ブラウザ上でGoogleカレンダーを見たい方は[こちら](https://calendar.google.com/calendar/embed?src=57f2f2a766a36a19faf47870711509914dc87f374fb03c38140e22e06f7ed1c4%40group.calendar.google.com&ctz=Asia%2FTokyo)
+* ブラウザ上でGoogleカレンダーを見たい方は[こちら](https://calendar.google.com/calendar/embed?src=2de570f4c3d8953da730014e5f8bd23d94a5cd77578363ab97590d810991b39d%40group.calendar.google.com&ctz=Asia%2FTokyo)
 
 ## 仕組み
 
