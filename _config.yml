@@ -3,3 +3,10 @@ description: 渡邉美穂さんのスケジュールを自身のGoogleカレン�
 lang: ja_JP
 plugins:
   - jekyll-seo-tag
+url: https://github.com/CircleTenThanks
+social:
+  name:  CircleTenThanks 
+  links:
+    - https://github.com/CircleTenThanks
+    - https://www.youtube.com/@CircleTenThanks
+    - https://twitter.com/CircleTenThanks
