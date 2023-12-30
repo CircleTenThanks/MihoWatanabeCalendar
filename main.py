@@ -27,7 +27,7 @@ def build_calendar_api():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            creds = service_account.Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+            creds = service_account.Credentials.from_service_account_file("credentials_mw.json", scopes=SCOPES)
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
 
@@ -280,7 +280,7 @@ if __name__ == "__main__":
 
     # API系
     calendarId = (
-        os.environ['CALENDAR_ID']  # NOTE:自分のカレンダーID
+        os.environ['CALENDAR_ID_MW']  # NOTE:自分のカレンダーID
     )
     service = build_calendar_api()
 
