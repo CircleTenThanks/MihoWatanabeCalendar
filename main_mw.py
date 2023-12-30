@@ -16,6 +16,87 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 
+def main():
+    me = singleton.SingleInstance() 
+
+    # API系
+    calendarId = (
+        os.environ['CALENDAR_ID_MW']  # NOTE:自分のカレンダーID
+    )
+    service = build_calendar_api()
+
+    schedule_list = get_schedule_list(1, 1)
+
+    if schedule_list == None:
+        sys.exit()
+
+    
+    for schedule in schedule_list:
+        start_day_buf = schedule.find("time", {"class": "time"})
+        if start_day_buf == None:
+            break
+        start_day_buf = start_day_buf['datetime']
+        if start_day_buf == None:
+            break
+        else:
+           start_day = start_day_buf
+
+    start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
+    start_datetime = start_datetime + datetime.timedelta(days=-1)
+    end_day = schedule_list[0].find("time", {"class": "time"})['datetime']
+    end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
+    end_datetime = end_datetime + datetime.timedelta(days=1)
+    previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
+
+    for schedule in schedule_list:
+        (
+            event_day,
+            event_name,
+            event_link,
+        ) = get_schedule_info(schedule)
+
+        if (event_day == None or
+            event_name == None or
+            event_link == None):
+            continue
+
+        if prepare_info_for_calendar(
+            event_name,
+            event_day,
+            previous_add_event_lists,
+            False,
+        ) == True:
+            continue
+
+        url = f'https://mihowatanabe.jp{event_link}'
+        (
+            event_start_time,
+            event_end_time,
+        )= get_schedule_time(event_day, url)
+
+        # 24時を跨ぐ時刻表記によって日付が変わっているためもう一度
+        if event_start_time != "":
+            if prepare_info_for_calendar(
+                event_name,
+                event_start_time.strftime("%Y-%m-%d"),
+                previous_add_event_lists,
+                True,
+            ) == True:
+                continue
+        else:
+            print("add:" + event_day + " " + event_name)
+
+
+        # step4: カレンダーへ情報を追加
+        add_info_to_calendar(
+            calendarId,
+            event_name,
+            event_day,
+            event_start_time,
+            event_end_time,
+            url,
+        )
+
 
 def build_calendar_api():
     SCOPES = ["https://www.googleapis.com/auth/calendar"]
@@ -276,82 +357,4 @@ def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event
 
 
 if __name__ == "__main__":
-    me = singleton.SingleInstance() 
-
-    # API系
-    calendarId = (
-        os.environ['CALENDAR_ID_MW']  # NOTE:自分のカレンダーID
-    )
-    service = build_calendar_api()
-
-    schedule_list = get_schedule_list(1, 1)
-
-    if schedule_list == None:
-        sys.exit()
-
-    
-    for schedule in schedule_list:
-        start_day_buf = schedule.find("time", {"class": "time"})
-        if start_day_buf == None:
-            break
-        start_day_buf = start_day_buf['datetime']
-        if start_day_buf == None:
-            break
-        else:
-           start_day = start_day_buf
-
-    start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
-    start_datetime = start_datetime + datetime.timedelta(days=-1)
-    end_day = schedule_list[0].find("time", {"class": "time"})['datetime']
-    end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
-    end_datetime = end_datetime + datetime.timedelta(days=1)
-    previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
-
-    for schedule in schedule_list:
-        (
-            event_day,
-            event_name,
-            event_link,
-        ) = get_schedule_info(schedule)
-
-        if (event_day == None or
-            event_name == None or
-            event_link == None):
-            continue
-
-        if prepare_info_for_calendar(
-            event_name,
-            event_day,
-            previous_add_event_lists,
-            False,
-        ) == True:
-            continue
-
-        url = f'https://mihowatanabe.jp{event_link}'
-        (
-            event_start_time,
-            event_end_time,
-        )= get_schedule_time(event_day, url)
-
-        # 24時を跨ぐ時刻表記によって日付が変わっているためもう一度
-        if event_start_time != "":
-            if prepare_info_for_calendar(
-                event_name,
-                event_start_time.strftime("%Y-%m-%d"),
-                previous_add_event_lists,
-                True,
-            ) == True:
-                continue
-        else:
-            print("add:" + event_day + " " + event_name)
-
-
-        # step4: カレンダーへ情報を追加
-        add_info_to_calendar(
-            calendarId,
-            event_name,
-            event_day,
-            event_start_time,
-            event_end_time,
-            url,
-        )
+    main()
