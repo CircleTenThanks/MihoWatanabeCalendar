@@ -95,11 +95,15 @@ def get_schedule_time(event_time, url):
         line = line.replace("時", ":")
         line = line.replace("分", "")
 
-        # 午後表記で記載されているパターン
+        # 12時間表記で記載されているパターン
         hour12_flg = False
         date_text_arr = re.search(r'午後(\d+)', line)
         if date_text_arr != None:
-            if int(date_text_arr[1]) <= 11:
+            if int(date_text_arr[1]) <= 12:
+                hour12_flg = True
+        date_text_arr = re.search(r'(よる|夜)(\d+)', line)
+        if date_text_arr != None:
+            if 6 <= int(date_text_arr[2]) <= 12:
                 hour12_flg = True
 
         # 年月日、開始時分、終了時分まですべて記載されているパターン
