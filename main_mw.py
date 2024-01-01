@@ -95,6 +95,13 @@ def get_schedule_time(event_time, url):
         line = line.replace("時", ":")
         line = line.replace("分", "")
 
+        # 午後表記で記載されているパターン
+        hour12_flg = False
+        date_text_arr = re.search(r'午後(\d+)', line)
+        if date_text_arr != None:
+            if date_text_arr[1] <= 11:
+                hour12_flg = True
+
         # 年月日、開始時分、終了時分まですべて記載されているパターン
         date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line)
 
@@ -102,8 +109,12 @@ def get_schedule_time(event_time, url):
             year = date_text_arr[1]
             month = date_text_arr[2].zfill(2)
             day = date_text_arr[3].zfill(2)
+            if hour12_flg:
+                date_text_arr[4] = str(int(date_text_arr[4]) + 12)
             hour_start = date_text_arr[4].zfill(2)
             minute_start = date_text_arr[5].zfill(2)
+            if hour12_flg:
+                date_text_arr[6] = str(int(date_text_arr[6]) + 12)
             hour_end = date_text_arr[6].zfill(2)
             minute_end = date_text_arr[7].zfill(2)
 
@@ -121,6 +132,8 @@ def get_schedule_time(event_time, url):
             year = date_text_arr[1]
             month = date_text_arr[2].zfill(2)
             day = date_text_arr[3].zfill(2)
+            if hour12_flg:
+                date_text_arr[4] = str(int(date_text_arr[4]) + 12)
             hour_start = date_text_arr[4].zfill(2)
             minute_start = date_text_arr[5].zfill(2)
 
@@ -137,8 +150,12 @@ def get_schedule_time(event_time, url):
             year = event_time.split('-')[0]
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
+            if hour12_flg:
+                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
             hour_start = date_text_arr[3].zfill(2)
             minute_start = date_text_arr[4].zfill(2)
+            if hour12_flg:
+                date_text_arr[5] = str(int(date_text_arr[5]) + 12)
             hour_end = date_text_arr[5].zfill(2)
             minute_end = date_text_arr[6].zfill(2)
 
@@ -156,6 +173,8 @@ def get_schedule_time(event_time, url):
             year = event_time.split('-')[0]
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
+            if hour12_flg:
+                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
             hour_start = date_text_arr[3].zfill(2)
             minute_start = date_text_arr[4].zfill(2)
 
@@ -172,6 +191,8 @@ def get_schedule_time(event_time, url):
             year = event_time.split('-')[0]
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
+            if hour12_flg:
+                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
             hour_start = date_text_arr[3].zfill(2)
             minute_start = "00"
 
