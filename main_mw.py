@@ -99,7 +99,7 @@ def get_schedule_time(event_time, url):
         hour12_flg = False
         date_text_arr = re.search(r'午後(\d+)', line)
         if date_text_arr != None:
-            if date_text_arr[1] <= 11:
+            if int(date_text_arr[1]) <= 11:
                 hour12_flg = True
 
         # 年月日、開始時分、終了時分まですべて記載されているパターン
@@ -110,12 +110,14 @@ def get_schedule_time(event_time, url):
             month = date_text_arr[2].zfill(2)
             day = date_text_arr[3].zfill(2)
             if hour12_flg:
-                date_text_arr[4] = str(int(date_text_arr[4]) + 12)
-            hour_start = date_text_arr[4].zfill(2)
+                hour_start = str(int(date_text_arr[4]) + 12).zfill(2)
+            else:
+                hour_start = date_text_arr[4].zfill(2)
             minute_start = date_text_arr[5].zfill(2)
             if hour12_flg:
-                date_text_arr[6] = str(int(date_text_arr[6]) + 12)
-            hour_end = date_text_arr[6].zfill(2)
+                hour_end = str(int(date_text_arr[6]) + 12).zfill(2)
+            else:
+                hour_end = date_text_arr[6].zfill(2)
             minute_end = date_text_arr[7].zfill(2)
 
             if event_time != f'{year}-{month}-{day}':
@@ -133,8 +135,9 @@ def get_schedule_time(event_time, url):
             month = date_text_arr[2].zfill(2)
             day = date_text_arr[3].zfill(2)
             if hour12_flg:
-                date_text_arr[4] = str(int(date_text_arr[4]) + 12)
-            hour_start = date_text_arr[4].zfill(2)
+                hour_start = str(int(date_text_arr[4]) + 12).zfill(2)
+            else:
+                hour_start = date_text_arr[4].zfill(2)
             minute_start = date_text_arr[5].zfill(2)
 
             if event_time != f'{year}-{month}-{day}':
@@ -151,12 +154,14 @@ def get_schedule_time(event_time, url):
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
             if hour12_flg:
-                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
-            hour_start = date_text_arr[3].zfill(2)
+                hour_start = str(int(date_text_arr[3]) + 12).zfill(2)
+            else:
+                hour_start = date_text_arr[3].zfill(2)
             minute_start = date_text_arr[4].zfill(2)
             if hour12_flg:
-                date_text_arr[5] = str(int(date_text_arr[5]) + 12)
-            hour_end = date_text_arr[5].zfill(2)
+                hour_end = str(int(date_text_arr[5]) + 12).zfill(2)
+            else:
+                hour_end = date_text_arr[5].zfill(2)
             minute_end = date_text_arr[6].zfill(2)
 
             if event_time != f'{year}-{month}-{day}':
@@ -174,8 +179,9 @@ def get_schedule_time(event_time, url):
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
             if hour12_flg:
-                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
-            hour_start = date_text_arr[3].zfill(2)
+                hour_start = str(int(date_text_arr[3]) + 12).zfill(2)
+            else:
+                hour_start = date_text_arr[3].zfill(2)
             minute_start = date_text_arr[4].zfill(2)
 
             if event_time != f'{year}-{month}-{day}':
@@ -192,8 +198,9 @@ def get_schedule_time(event_time, url):
             month = date_text_arr[1].zfill(2)
             day = date_text_arr[2].zfill(2)
             if hour12_flg:
-                date_text_arr[3] = str(int(date_text_arr[3]) + 12)
-            hour_start = date_text_arr[3].zfill(2)
+                hour_start = str(int(date_text_arr[3]) + 12).zfill(2)
+            else:
+                hour_start = date_text_arr[3].zfill(2)
             minute_start = "00"
 
             if event_time != f'{year}-{month}-{day}':
