@@ -2,7 +2,7 @@
 <iframe src="https://calendar.google.com/calendar/embed?&showTitle=0&mode=AGENDA&src=2de570f4c3d8953da730014e5f8bd23d94a5cd77578363ab97590d810991b39d%40group.calendar.google.com&ctz=Asia%2FTokyo" style="border: 0" width="100%" height="300" frameborder="0" scrolling="no"></iframe>
 
 
-渡邉美穂さんのスケジュールをGoogleカレンダーへ自動追加し、推し活ライフのサポートを目指します。  
+渡邉美穂さんのスケジュールをGoogleカレンダーへ自動追加し、充実した推し活ライフをサポートします。  
 [こちら](https://github.com/CircleTenThanks/Hinatazaka46Calendar.git)をベースに作っています。
 
 ## Googleカレンダー共有リンク

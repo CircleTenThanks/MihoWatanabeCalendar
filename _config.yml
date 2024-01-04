@@ -1,5 +1,5 @@
 title: 渡邉美穂 Googleカレンダー
-description: 渡邉美穂さんのスケジュールをGoogleカレンダーへ自動追加し、推し活ライフのサポートを目指します。
+description: 渡邉美穂さんのスケジュールをGoogleカレンダーへ自動追加し、充実した推し活ライフをサポートします。
 lang: ja_JP
 plugins:
   - jekyll-seo-tag
