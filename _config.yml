@@ -1,8 +1,10 @@
 title: 渡邉美穂 Googleカレンダー
 description: 渡邉美穂さんのスケジュールをGoogleカレンダーへ自動追加し、充実した推し活ライフをサポートします。
 lang: ja_JP
+remote_theme: pages-themes/primer@v0.2.0
 plugins:
   - jekyll-seo-tag
+  - jekyll-remote-theme
 url: https://github.com/CircleTenThanks
 social:
   name:  CircleTenThanks 
