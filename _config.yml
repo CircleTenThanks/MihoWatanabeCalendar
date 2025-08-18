@@ -4,7 +4,7 @@ description: 渡邉美穂さんのスケジュールをGoogleカレンダーへ�
 lang: ja_JP
 plugins:
   - jekyll-seo-tag
-url: https://github.com/CircleTenThanks
+url: https://circletenthanks.github.io/MihoWatanabeCalendar
 social:
   name:  CircleTenThanks 
   links:
