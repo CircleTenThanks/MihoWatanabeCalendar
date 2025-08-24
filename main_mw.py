@@ -16,6 +16,13 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 
+import argparse
+
+# コマンドライン引数のパーサーを作成
+parser = argparse.ArgumentParser(description='Googleカレンダーへの追加を防ぐモードを設定します。')
+parser.add_argument('--no-calendar', action='store_true', help='Googleカレンダーへの追加を防ぎます。')
+args = parser.parse_args()
+
 
 def build_calendar_api():
     SCOPES = ["https://www.googleapis.com/auth/calendar"]
@@ -44,70 +51,168 @@ def remove_blank(text):
 
 
 def get_schedule_list(start_page, end_page):
-
     schedule_list = []
     for page in range(start_page, end_page + 1):
-        url = f"https://mihowatanabe.jp/contents/schedule/page/{page}"
+        url = f"https://mihowatanabe.jp/news/all/pages/{page}"
         result = requests.get(url)
         soup = BeautifulSoup(result.content, features="lxml")
 
-        schedule_list.extend(soup.find_all("li", {"class": "list-item"}))
+        # 各記事のリンクを取得
+        articles = soup.find_all("div", {"class": "css-izgksv"})
+        for article in articles:
+            link_tag = article.find_parent("a", href=True)
+            if link_tag:
+                article_url = f"https://mihowatanabe.jp{link_tag['href']}"
+                article_result = requests.get(article_url)
+                if article_result.status_code == 200:
+                    article_soup = BeautifulSoup(article_result.content, features="lxml")
+                    
+                    # 記事から日付とイベント名を抽出
+                    event_time, event_name, event_link = get_schedule_info(article_soup)
+                    if event_time and event_name:
+                        schedule_list.append((event_time, event_name, event_link, article_url))
 
-        time.sleep(1)  # NOTE:サーバーへの負荷を解消
+            time.sleep(1)  # サーバーへの負荷を解消
 
     return schedule_list
 
 
-def get_schedule_info(schedule_list):
+def get_schedule_info(article_soup):
+    # イベント名を取得
+    event_name = article_soup.find("h1", {"class": "chakra-text css-11veorf"})
+    if event_name:
+        event_name = event_name.get_text(strip=True)
+    else:
+        return None, None, None
 
-    event_time = schedule_list.find("time", {"class": "time"})
-    if event_time != None:
-        event_time = event_time['datetime']
+    # 記事内容から実際のイベント日時を取得
+    event_time = None
+    content_div = article_soup.find("div", {"class": "css-ikmllp"})
+    if content_div:
+        content_paragraphs = content_div.find_all("p", {"class": "chakra-text css-19ol15i"})
+        for p in content_paragraphs:
+            text = p.get_text(strip=True)
+            # "8月28日（木）25:00〜" のような形式を検索
+            time_pattern = re.search(r'(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})', text)
+            if time_pattern:
+                month = int(time_pattern.group(1))
+                day = int(time_pattern.group(2))
+                hour = int(time_pattern.group(3))
+                
+                # 現在の年を使用
+                current_year = datetime.datetime.now().year
+                
+                # 25時などの表記を翌日に変換
+                if hour >= 24:
+                    day += 1
+                    # 簡単な月末処理
+                    if day > 31:
+                        day = 1
+                        month += 1
+                        if month > 12:
+                            month = 1
+                            current_year += 1
+                
+                event_time = f"{current_year}-{month:02d}-{day:02d}"
+                break
+    
+    # フォールバック: 記事の投稿日を使用
+    if not event_time:
+        post_date = article_soup.find("p", {"class": "chakra-text css-18nb3iq"})
+        if post_date:
+            date_text = post_date.get_text(strip=True)
+            # "2025.08.22" 形式を "2025-08-22" 形式に変換
+            if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
+                event_time = date_text.replace('.', '-')
 
-    event_name = schedule_list.find("h3", {"class": "list-title"})
-    if event_name != None:
-        event_name = event_name.contents[0]
-        event_name = remove_blank(event_name)
-
-    event_link = schedule_list.find("a", {"class": "gtm_content_link"})
-    if event_link != None:
-        event_link = event_link['href']
+    # 記事のリンクは現在のURLから取得
+    current_url = article_soup.find("link", {"rel": "canonical"})
+    if current_url:
+        event_link = current_url.get('href', '')
+        if event_link.startswith('https://mihowatanabe.jp'):
+            event_link = event_link.replace('https://mihowatanabe.jp', '')
+    else:
+        event_link = "/news/detail/unknown"
 
     return event_time, event_name, event_link
 
 
 def get_schedule_time(event_time, url):
-
     result = requests.get(url)
     soup = BeautifulSoup(result.content, features="lxml")
 
-    schedule_detail = soup.find("div", {"class": "body"})
-    line_list = schedule_detail.find_all("p")
+    # 記事の本文を取得（新しいHTML構造に対応）
+    content_div = soup.find("div", {"class": "css-ikmllp"})
+    if content_div:
+        line_list = content_div.find_all("p", {"class": "chakra-text css-19ol15i"})
+    else:
+        # フォールバック: 従来の方法
+        schedule_detail = soup.find("div")
+        line_list = schedule_detail.find_all("p")
 
     for line in line_list:
+        original_text = line.get_text(strip=True) if hasattr(line, 'get_text') else str(line)
         
-        line = mojimoji.zen_to_han(line.text, kana=False)
-        line = line.replace("-", "~")
-        line = line.replace("〜", "~")  # 機種依存文字が使われていることがあった
-        line = line.replace("年", "/")
-        line = line.replace("月", "/")
-        line = line.replace("日", "")
-        line = line.replace("時", ":")
-        line = line.replace("分", "")
+        # まず、すべてのパターンで使用する統一されたテキスト処理を行う
+        line_text = mojimoji.zen_to_han(original_text, kana=False)
+        line_text = line_text.replace("-", "~")
+        line_text = line_text.replace("〜", "~")
+        line_text = line_text.replace("年", "/")
+        line_text = line_text.replace("月", "/")
+        line_text = line_text.replace("日", "")
+        line_text = line_text.replace("時", ":")
+        line_text = line_text.replace("分", "")
+        
+        # 日付と時刻のパターンを検索
+        # "8/28 25:00" のような形式（統一処理後のline_textで検索）
+        time_pattern1 = re.search(r'(\d{1,2})/(\d{1,2}).*?(\d{1,2}):(\d{2})', line_text)
+        if time_pattern1:
+            month = int(time_pattern1.group(1))
+            day = int(time_pattern1.group(2))
+            hour = int(time_pattern1.group(3))
+            minute = int(time_pattern1.group(4))
+            
+            # 現在の年を使用
+            current_year = datetime.datetime.now().year
+            
+            # 25時などの表記を翌日に変換
+            if hour >= 24:
+                hour -= 24
+                day += 1
+                # 月末の処理は簡略化
+                if day > 31:
+                    day = 1
+                    month += 1
+                    if month > 12:
+                        month = 1
+                        current_year += 1
+            
+            event_date_str = f"{current_year}-{month:02d}-{day:02d}"
+            
+            # event_timeの形式を統一（YYYY-MM-DD形式に変換）
+            if '.' in event_time:
+                event_time_normalized = event_time.replace('.', '-')
+            else:
+                event_time_normalized = event_time
+            
+            if event_date_str == event_time_normalized:
+                event_start = datetime.datetime(current_year, month, day, hour, minute)
+                event_end = event_start + datetime.timedelta(hours=1)  # デフォルトで1時間後
+                return event_start, event_end
 
         # 12時間表記で記載されているパターン
         hour12_flg = False
-        date_text_arr = re.search(r'午後(\d+)', line)
+        date_text_arr = re.search(r'午後(\d+)', line_text)
         if date_text_arr != None:
             if int(date_text_arr[1]) <= 12:
                 hour12_flg = True
-        date_text_arr = re.search(r'(よる|夜)(\d+)', line)
+        date_text_arr = re.search(r'(よる|夜)(\d+)', line_text)
         if date_text_arr != None:
             if 6 <= int(date_text_arr[2]) <= 12:
                 hour12_flg = True
 
         # 年月日、開始時分、終了時分まですべて記載されているパターン
-        date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line)
+        date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line_text)
 
         if date_text_arr != None:
             year = date_text_arr[1]
@@ -132,7 +237,7 @@ def get_schedule_time(event_time, url):
                 return event_start, event_end
 
         # 年月日、開始時分が記載されているパターン
-        date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)', line)
+        date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)', line_text)
 
         if date_text_arr != None:
             year = date_text_arr[1]
@@ -151,7 +256,7 @@ def get_schedule_time(event_time, url):
                 return event_start, event_end
             
         # 月日、開始時分、終了時分が記載されているパターン
-        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line)
+        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line_text)
 
         if date_text_arr != None:
             year = event_time.split('-')[0]
@@ -176,7 +281,7 @@ def get_schedule_time(event_time, url):
                 return event_start, event_end
         
         # 月日、開始時分が記載されているパターン
-        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)', line)
+        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)', line_text)
 
         if date_text_arr != None:
             year = event_time.split('-')[0]
@@ -195,7 +300,7 @@ def get_schedule_time(event_time, url):
                 return event_start, event_end
             
         # 月日、開始時が記載されているパターン
-        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):', line)
+        date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):', line_text)
 
         if date_text_arr != None:
             year = event_time.split('-')[0]
@@ -261,7 +366,6 @@ def change_event_starttime_to_jst(events):
 
 
 def search_events(service, calendar_id, start_datetime, end_datetime):
-
     start_day = start_datetime.strftime("%Y-%m-%d")
     end_day = end_datetime.strftime("%Y-%m-%d")
 
@@ -288,7 +392,6 @@ def search_events(service, calendar_id, start_datetime, end_datetime):
 
 
 def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event_end_time, event_link):
-
     if(event_start_time == ""):
         event = {
             "summary": summary,
@@ -315,74 +418,63 @@ calendarId = (
 )
 service = build_calendar_api()
 
-schedule_list = get_schedule_list(1, 1)
+schedule_list = get_schedule_list(1, 1)  # ページ1から3まで処理
 
 if schedule_list == None:
     sys.exit()
 
+# 初期化
+if schedule_list:
+    # スケジュールリストを日付順にソート
+    schedule_list.sort(key=lambda x: x[0])
+    
+    # スケジュールリストから期間を計算
+    start_day = schedule_list[0][0]  # 最初のイベントの日付（最も古い日付）
+    end_day = schedule_list[-1][0]   # 最後のイベントの日付（最も新しい日付）
+    
+    start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
+    start_datetime = start_datetime + datetime.timedelta(days=-1)
+    end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
+    end_datetime = end_datetime + datetime.timedelta(days=1)
+    
+    # 既存のイベントを取得
+    previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
+else:
+    previous_add_event_lists = []
 
-for schedule in schedule_list:
-    start_day_buf = schedule.find("time", {"class": "time"})
-    if start_day_buf == None:
-        break
-    start_day_buf = start_day_buf['datetime']
-    if start_day_buf == None:
-        break
-    else:
-       start_day = start_day_buf
-
-start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
-start_datetime = start_datetime + datetime.timedelta(days=-1)
-end_day = schedule_list[0].find("time", {"class": "time"})['datetime']
-end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
-end_datetime = end_datetime + datetime.timedelta(days=1)
-previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
-
-for schedule in schedule_list:
+for event_time, event_name, event_link, article_url in schedule_list:
+    # 時刻情報を取得
     (
-        event_day,
-        event_name,
-        event_link,
-    ) = get_schedule_info(schedule)
+        event_start_time,
+        event_end_time,
+    )= get_schedule_time(event_time, article_url)
 
-    if (event_day == None or
-        event_name == None or
-        event_link == None):
-        continue
-
+    # 重複チェック（時刻情報がある場合は時刻付きの日付で、ない場合は元の日付で）
+    check_date = event_start_time.strftime("%Y-%m-%d") if event_start_time != "" else event_time
+    
     if prepare_info_for_calendar(
         event_name,
-        event_day,
+        check_date,
         previous_add_event_lists,
         False,
     ) == True:
         continue
 
-    url = f'https://mihowatanabe.jp{event_link}'
-    (
-        event_start_time,
-        event_end_time,
-    )= get_schedule_time(event_day, url)
-
-    # 24時を跨ぐ時刻表記によって日付が変わっているためもう一度
+    # ログ出力（時刻情報がある場合は時刻付きで、ない場合は時刻なしで）
     if event_start_time != "":
-        if prepare_info_for_calendar(
-            event_name,
-            event_start_time.strftime("%Y-%m-%d"),
-            previous_add_event_lists,
-            True,
-        ) == True:
-            continue
+        print(f"add: {event_start_time.strftime('%Y-%m-%d %H:%M')} {event_name}")
     else:
-        print("add:" + event_day + " " + event_name)
+        print("add:" + event_time + " " + event_name)
 
-
-    # step4: カレンダーへ情報を追加
-    add_info_to_calendar(
-        calendarId,
-        event_name,
-        event_day,
-        event_start_time,
-        event_end_time,
-        url,
-    )
+    # カレンダーへ情報を追加
+    if args.no_calendar:
+        print("Googleカレンダーへの追加をスキップします。")
+    else:
+        add_info_to_calendar(
+            calendarId,
+            event_name,
+            event_time,
+            event_start_time,
+            event_end_time,
+            article_url,
+        )
