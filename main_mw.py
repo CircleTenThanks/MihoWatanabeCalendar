@@ -58,7 +58,19 @@ def get_schedule_list(start_page, end_page):
         soup = BeautifulSoup(result.content, features="lxml")
 
         # 各記事のリンクを取得
+        # Chakra UIの動的クラス名に対応
         articles = soup.find_all("div", {"class": "css-izgksv"})
+        
+        # フォールバック - 記事らしいdiv要素を検索
+        if not articles:
+            # 記事の可能性が高いdiv要素を検索
+            potential_articles = soup.find_all("div")
+            for div in potential_articles:
+                if div.get("class") and any("css-" in cls for cls in div.get("class")):
+                    # リンク要素が含まれているかチェック
+                    if div.find_parent("a", href=True):
+                        articles.append(div)
+        
         for article in articles:
             link_tag = article.find_parent("a", href=True)
             if link_tag:
@@ -78,19 +90,55 @@ def get_schedule_list(start_page, end_page):
 
 
 def get_schedule_info(article_soup):
-    # イベント名を取得
-    event_name = article_soup.find("h1", {"class": "chakra-text css-11veorf"})
-    if event_name:
-        event_name = event_name.get_text(strip=True)
-    else:
+    # イベント名を取得 - Chakra UIの動的クラス名に対応
+    event_name = None
+    
+    # chakra-textクラスを持つh1要素を検索（CSSハッシュ部分は無視）
+    h1_elements = article_soup.find_all("h1")
+    for h1 in h1_elements:
+        if h1.get("class") and any("chakra-text" in cls for cls in h1.get("class")):
+            event_name = h1.get_text(strip=True)
+            break
+    
+    # フォールバック - 最初のh1要素を使用
+    if not event_name:
+        h1_element = article_soup.find("h1")
+        if h1_element:
+            event_name = h1_element.get_text(strip=True)
+    
+    if not event_name:
         return None, None, None
 
     # 記事内容から実際のイベント日時を取得
     event_time = None
+    
+    # 特定のクラスを持つdiv要素を検索
     content_div = article_soup.find("div", {"class": "css-ikmllp"})
+    
+    # フォールバック - 記事本文らしいdiv要素を検索
+    if not content_div:
+        # 記事本文の可能性が高いdiv要素を検索
+        potential_content_divs = article_soup.find_all("div")
+        for div in potential_content_divs:
+            if div.get("class") and any("css-" in cls for cls in div.get("class")):
+                # 段落要素が含まれているかチェック
+                if div.find_all("p"):
+                    content_div = div
+                    break
+    
     if content_div:
-        content_paragraphs = content_div.find_all("p", {"class": "chakra-text css-19ol15i"})
+        # chakra-textクラスを持つp要素を検索
+        content_paragraphs = content_div.find_all("p")
+        chakra_paragraphs = []
         for p in content_paragraphs:
+            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
+                chakra_paragraphs.append(p)
+        
+        # フォールバック - すべてのp要素を使用
+        if not chakra_paragraphs:
+            chakra_paragraphs = content_paragraphs
+        
+        for p in chakra_paragraphs:
             text = p.get_text(strip=True)
             # "8月28日（木）25:00〜" のような形式を検索
             time_pattern = re.search(r'(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})', text)
@@ -118,12 +166,23 @@ def get_schedule_info(article_soup):
     
     # フォールバック: 記事の投稿日を使用
     if not event_time:
-        post_date = article_soup.find("p", {"class": "chakra-text css-18nb3iq"})
-        if post_date:
-            date_text = post_date.get_text(strip=True)
-            # "2025.08.22" 形式を "2025-08-22" 形式に変換
-            if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
-                event_time = date_text.replace('.', '-')
+        # chakra-textクラスを持つp要素から日付を検索
+        all_p_elements = article_soup.find_all("p")
+        for p in all_p_elements:
+            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
+                date_text = p.get_text(strip=True)
+                # "2025.08.22" 形式を "2025-08-22" 形式に変換
+                if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
+                    event_time = date_text.replace('.', '-')
+                    break
+        
+        # フォールバック - 日付らしいテキストを検索
+        if not event_time:
+            for p in all_p_elements:
+                date_text = p.get_text(strip=True)
+                if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
+                    event_time = date_text.replace('.', '-')
+                    break
 
     # 記事のリンクは現在のURLから取得
     current_url = article_soup.find("link", {"rel": "canonical"})
@@ -141,14 +200,37 @@ def get_schedule_time(event_time, url):
     result = requests.get(url)
     soup = BeautifulSoup(result.content, features="lxml")
 
-    # 記事の本文を取得（新しいHTML構造に対応）
+    # 記事の本文を取得（Chakra UIの動的クラス名に対応）
     content_div = soup.find("div", {"class": "css-ikmllp"})
+    
+    # フォールバック - 記事本文らしいdiv要素を検索
+    if not content_div:
+        # 記事本文の可能性が高いdiv要素を検索
+        potential_content_divs = soup.find_all("div")
+        for div in potential_content_divs:
+            if div.get("class") and any("css-" in cls for cls in div.get("class")):
+                # 段落要素が含まれているかチェック
+                if div.find_all("p"):
+                    content_div = div
+                    break
+    
     if content_div:
-        line_list = content_div.find_all("p", {"class": "chakra-text css-19ol15i"})
+        # chakra-textクラスを持つp要素を検索
+        all_p_elements = content_div.find_all("p")
+        chakra_paragraphs = []
+        for p in all_p_elements:
+            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
+                chakra_paragraphs.append(p)
+        
+        # フォールバック - すべてのp要素を使用
+        if chakra_paragraphs:
+            line_list = chakra_paragraphs
+        else:
+            line_list = all_p_elements
     else:
         # フォールバック: 従来の方法
         schedule_detail = soup.find("div")
-        line_list = schedule_detail.find_all("p")
+        line_list = schedule_detail.find_all("p") if schedule_detail else []
 
     for line in line_list:
         original_text = line.get_text(strip=True) if hasattr(line, 'get_text') else str(line)
