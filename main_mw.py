@@ -473,6 +473,40 @@ def over24Hdatetime(year, month, day, times):
     return dt
 
 
+def check_duplicate_event(event_name, event_date, event_time_str, previous_add_event_lists, article_url=None):
+    """
+    重複チェック関数
+    
+    Args:
+        event_name: イベント名
+        event_date: 日付文字列 (YYYY-MM-DD形式)
+        event_time_str: 時刻文字列 (HH:MM形式、時刻がない場合は空文字列)
+        previous_add_event_lists: 既存のイベントリスト
+    
+    Returns:
+        bool: 重複している場合はTrue、そうでなければFalse
+    """
+    candidate_keys = []
+    # タイトル基準
+    if event_time_str:
+        candidate_keys.append(f"{event_date}-{event_name}-{event_time_str}")
+    else:
+        candidate_keys.append(f"{event_date}-{event_name}")
+
+    # 記事URL基準（descriptionに保存している）
+    if article_url:
+        if event_time_str:
+            candidate_keys.append(f"{event_date}-{article_url}-{event_time_str}")
+        else:
+            candidate_keys.append(f"{event_date}-{article_url}")
+
+    for key in candidate_keys:
+        if key in previous_add_event_lists:
+            print(f"pass: {event_date} {event_name}" + (f" {event_time_str}" if event_time_str else ""))
+            return True
+    return False
+
+
 def prepare_info_for_calendar(
     event_name, event_time, previous_add_event_lists, confirm
 ):
@@ -491,15 +525,17 @@ def change_event_starttime_to_jst(events):
     events_starttime = []
     for event in events:
         if "date" in event["start"].keys():
-            events_starttime.append(event["start"]["date"])
+            # 時刻情報がない場合（終日イベント）
+            events_starttime.append((event["start"]["date"], ""))
         else:
             str_event_uct_time = event["start"]["dateTime"]
             event_jst_time = datetime.datetime.strptime(
                 str_event_uct_time, "%Y-%m-%dT%H:%M:%S+09:00"
             )
-            # 重複チェック用には日付のみを返す（時刻情報は別途管理）
-            str_event_jst_time = event_jst_time.strftime("%Y-%m-%d")
-            events_starttime.append(str_event_jst_time)
+            # 日付と時刻を分けて返す
+            str_event_jst_date = event_jst_time.strftime("%Y-%m-%d")
+            str_event_jst_time = event_jst_time.strftime("%H:%M")
+            events_starttime.append((str_event_jst_date, str_event_jst_time))
     return events_starttime
 
 
@@ -523,10 +559,16 @@ def search_events(service, calendar_id, start_datetime, end_datetime):
         return []
     else:
         events_starttime = change_event_starttime_to_jst(events)
-        return [
-            event_starttime + "-" +  event["summary"]
-            for event, event_starttime in zip(events, events_starttime)
-        ]
+        result_keys = []
+        for event, (event_date, event_time) in zip(events, events_starttime):
+            title_key = f"{event_date}-{event['summary']}" if not event_time else f"{event_date}-{event['summary']}-{event_time}"
+            result_keys.append(title_key)
+            # descriptionに記事URLが入っている想定
+            desc = event.get('description') or ''
+            if desc:
+                url_key = f"{event_date}-{desc}" if not event_time else f"{event_date}-{desc}-{event_time}"
+                result_keys.append(url_key)
+        return result_keys
 
 
 def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event_end_time, event_link):
@@ -573,7 +615,8 @@ if schedule_list:
     start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
     start_datetime = start_datetime + datetime.timedelta(days=-1)
     end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
-    end_datetime = end_datetime + datetime.timedelta(days=1)
+    # 記事内の複数日付（後半日付）を取りこぼさないように余裕を持たせる
+    end_datetime = end_datetime + datetime.timedelta(days=30)
     
     # 既存のイベントを取得
     previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
@@ -587,12 +630,13 @@ for event_time, event_name, event_link, article_url in schedule_list:
     # 時刻情報がない場合の処理
     if not event_times:
         # 重複チェック
-        if prepare_info_for_calendar(
+        if check_duplicate_event(
             event_name,
             event_time,
+            "",  # 時刻情報なし
             previous_add_event_lists,
-            False,
-        ) == True:
+            article_url,
+        ):
             continue
 
         print("add:" + event_time + " " + event_name)
@@ -615,25 +659,15 @@ for event_time, event_name, event_link, article_url in schedule_list:
             
             # 重複チェック（時刻情報がある場合は時刻付きの日付で）
             check_date = event_start_time.strftime("%Y-%m-%d")
+            check_time = event_start_time.strftime("%H:%M")
             
-            # イベント名と日時を組み合わせて重複チェック
-            # 同じ記事内の異なる日時は個別のイベントとして扱う
-            check_key = f"{check_date}-{event_name}-{event_start_time.strftime('%H:%M')}"
-            
-            # 既存のイベントリストから、同じ日付・イベント名・時刻の組み合わせをチェック
-            # 時刻が異なる場合は個別のイベントとして扱う
-            if check_key in previous_add_event_lists:
-                # 同じ日付・イベント名・時刻の組み合わせが既に存在する場合
-                print(f"pass: {check_date} {event_name} {event_start_time.strftime('%H:%M')}")
-                continue
-            
-            if prepare_info_for_calendar(
+            if check_duplicate_event(
                 event_name,
                 check_date,
+                check_time,
                 previous_add_event_lists,
-                False,
-            ) == True:
-                print(f"pass: {check_date} {event_name} {event_start_time.strftime('%H:%M')}")
+                article_url,
+            ):
                 continue
 
             print(f"add: {event_start_time.strftime('%Y-%m-%d %H:%M')} {event_name}")
