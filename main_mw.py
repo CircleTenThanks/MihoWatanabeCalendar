@@ -518,15 +518,17 @@ def change_event_starttime_to_jst(events):
     events_starttime = []
     for event in events:
         if "date" in event["start"].keys():
-            events_starttime.append(event["start"]["date"])
+            # 時刻情報がない場合（終日イベント）
+            events_starttime.append((event["start"]["date"], ""))
         else:
             str_event_uct_time = event["start"]["dateTime"]
             event_jst_time = datetime.datetime.strptime(
                 str_event_uct_time, "%Y-%m-%dT%H:%M:%S+09:00"
             )
-            # 重複チェック用には日付のみを返す（時刻情報は別途管理）
-            str_event_jst_time = event_jst_time.strftime("%Y-%m-%d")
-            events_starttime.append(str_event_jst_time)
+            # 日付と時刻を分けて返す
+            str_event_jst_date = event_jst_time.strftime("%Y-%m-%d")
+            str_event_jst_time = event_jst_time.strftime("%H:%M")
+            events_starttime.append((str_event_jst_date, str_event_jst_time))
     return events_starttime
 
 
@@ -551,8 +553,8 @@ def search_events(service, calendar_id, start_datetime, end_datetime):
     else:
         events_starttime = change_event_starttime_to_jst(events)
         return [
-            event_starttime + "-" +  event["summary"]
-            for event, event_starttime in zip(events, events_starttime)
+            f"{event_date}-{event['summary']}-{event_time}" if event_time else f"{event_date}-{event['summary']}"
+            for event, (event_date, event_time) in zip(events, events_starttime)
         ]
 
 
