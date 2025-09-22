@@ -473,7 +473,7 @@ def over24Hdatetime(year, month, day, times):
     return dt
 
 
-def check_duplicate_event(event_name, event_date, event_time_str, previous_add_event_lists):
+def check_duplicate_event(event_name, event_date, event_time_str, previous_add_event_lists, article_url=None):
     """
     重複チェック関数
     
@@ -486,18 +486,25 @@ def check_duplicate_event(event_name, event_date, event_time_str, previous_add_e
     Returns:
         bool: 重複している場合はTrue、そうでなければFalse
     """
+    candidate_keys = []
+    # タイトル基準
     if event_time_str:
-        # 時刻情報がある場合
-        check_key = f"{event_date}-{event_name}-{event_time_str}"
+        candidate_keys.append(f"{event_date}-{event_name}-{event_time_str}")
     else:
-        # 時刻情報がない場合
-        check_key = f"{event_date}-{event_name}"
-    
-    if check_key in previous_add_event_lists:
-        print(f"pass: {event_date} {event_name}" + (f" {event_time_str}" if event_time_str else ""))
-        return True
-    else:
-        return False
+        candidate_keys.append(f"{event_date}-{event_name}")
+
+    # 記事URL基準（descriptionに保存している）
+    if article_url:
+        if event_time_str:
+            candidate_keys.append(f"{event_date}-{article_url}-{event_time_str}")
+        else:
+            candidate_keys.append(f"{event_date}-{article_url}")
+
+    for key in candidate_keys:
+        if key in previous_add_event_lists:
+            print(f"pass: {event_date} {event_name}" + (f" {event_time_str}" if event_time_str else ""))
+            return True
+    return False
 
 
 def prepare_info_for_calendar(
@@ -552,10 +559,16 @@ def search_events(service, calendar_id, start_datetime, end_datetime):
         return []
     else:
         events_starttime = change_event_starttime_to_jst(events)
-        return [
-            f"{event_date}-{event['summary']}-{event_time}" if event_time else f"{event_date}-{event['summary']}"
-            for event, (event_date, event_time) in zip(events, events_starttime)
-        ]
+        result_keys = []
+        for event, (event_date, event_time) in zip(events, events_starttime):
+            title_key = f"{event_date}-{event['summary']}" if not event_time else f"{event_date}-{event['summary']}-{event_time}"
+            result_keys.append(title_key)
+            # descriptionに記事URLが入っている想定
+            desc = event.get('description') or ''
+            if desc:
+                url_key = f"{event_date}-{desc}" if not event_time else f"{event_date}-{desc}-{event_time}"
+                result_keys.append(url_key)
+        return result_keys
 
 
 def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event_end_time, event_link):
@@ -602,7 +615,8 @@ if schedule_list:
     start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
     start_datetime = start_datetime + datetime.timedelta(days=-1)
     end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
-    end_datetime = end_datetime + datetime.timedelta(days=1)
+    # 記事内の複数日付（後半日付）を取りこぼさないように余裕を持たせる
+    end_datetime = end_datetime + datetime.timedelta(days=30)
     
     # 既存のイベントを取得
     previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
@@ -621,6 +635,7 @@ for event_time, event_name, event_link, article_url in schedule_list:
             event_time,
             "",  # 時刻情報なし
             previous_add_event_lists,
+            article_url,
         ):
             continue
 
@@ -651,6 +666,7 @@ for event_time, event_name, event_link, article_url in schedule_list:
                 check_date,
                 check_time,
                 previous_add_event_lists,
+                article_url,
             ):
                 continue
 
