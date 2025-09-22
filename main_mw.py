@@ -473,6 +473,33 @@ def over24Hdatetime(year, month, day, times):
     return dt
 
 
+def check_duplicate_event(event_name, event_date, event_time_str, previous_add_event_lists):
+    """
+    重複チェック関数
+    
+    Args:
+        event_name: イベント名
+        event_date: 日付文字列 (YYYY-MM-DD形式)
+        event_time_str: 時刻文字列 (HH:MM形式、時刻がない場合は空文字列)
+        previous_add_event_lists: 既存のイベントリスト
+    
+    Returns:
+        bool: 重複している場合はTrue、そうでなければFalse
+    """
+    if event_time_str:
+        # 時刻情報がある場合
+        check_key = f"{event_date}-{event_name}-{event_time_str}"
+    else:
+        # 時刻情報がない場合
+        check_key = f"{event_date}-{event_name}"
+    
+    if check_key in previous_add_event_lists:
+        print(f"pass: {event_date} {event_name}" + (f" {event_time_str}" if event_time_str else ""))
+        return True
+    else:
+        return False
+
+
 def prepare_info_for_calendar(
     event_name, event_time, previous_add_event_lists, confirm
 ):
@@ -587,12 +614,12 @@ for event_time, event_name, event_link, article_url in schedule_list:
     # 時刻情報がない場合の処理
     if not event_times:
         # 重複チェック
-        if prepare_info_for_calendar(
+        if check_duplicate_event(
             event_name,
             event_time,
+            "",  # 時刻情報なし
             previous_add_event_lists,
-            False,
-        ) == True:
+        ):
             continue
 
         print("add:" + event_time + " " + event_name)
@@ -615,25 +642,14 @@ for event_time, event_name, event_link, article_url in schedule_list:
             
             # 重複チェック（時刻情報がある場合は時刻付きの日付で）
             check_date = event_start_time.strftime("%Y-%m-%d")
+            check_time = event_start_time.strftime("%H:%M")
             
-            # イベント名と日時を組み合わせて重複チェック
-            # 同じ記事内の異なる日時は個別のイベントとして扱う
-            check_key = f"{check_date}-{event_name}-{event_start_time.strftime('%H:%M')}"
-            
-            # 既存のイベントリストから、同じ日付・イベント名・時刻の組み合わせをチェック
-            # 時刻が異なる場合は個別のイベントとして扱う
-            if check_key in previous_add_event_lists:
-                # 同じ日付・イベント名・時刻の組み合わせが既に存在する場合
-                print(f"pass: {check_date} {event_name} {event_start_time.strftime('%H:%M')}")
-                continue
-            
-            if prepare_info_for_calendar(
+            if check_duplicate_event(
                 event_name,
                 check_date,
+                check_time,
                 previous_add_event_lists,
-                False,
-            ) == True:
-                print(f"pass: {check_date} {event_name} {event_start_time.strftime('%H:%M')}")
+            ):
                 continue
 
             print(f"add: {event_start_time.strftime('%Y-%m-%d %H:%M')} {event_name}")
