@@ -3,16 +3,19 @@ import pickle
 import os
 import sys
 from tendo import singleton
-import mojimoji
+import jaconv
 import re
+import uuid
 
 import requests
 from bs4 import BeautifulSoup
+import hashlib
 
 import datetime
 from dateutil.relativedelta import relativedelta
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 
@@ -21,6 +24,7 @@ import argparse
 # コマンドライン引数のパーサーを作成
 parser = argparse.ArgumentParser(description='Googleカレンダーへの追加を防ぐモードを設定します。')
 parser.add_argument('--no-calendar', action='store_true', help='Googleカレンダーへの追加を防ぎます。')
+parser.add_argument('--test-run', action='store_true', help='テスト用にランダムなeventIdを使用します。')
 args = parser.parse_args()
 
 
@@ -266,7 +270,7 @@ def get_schedule_time(event_time, url):
             continue
         
         # まず、すべてのパターンで使用する統一されたテキスト処理を行う
-        line_text = mojimoji.zen_to_han(original_text, kana=False)
+        line_text = jaconv.z2h(original_text, kana=False)
         line_text = line_text.replace("-", "~")
         line_text = line_text.replace("〜", "~")
         line_text = line_text.replace("年", "/")
@@ -507,6 +511,38 @@ def check_duplicate_event(event_name, event_date, event_time_str, previous_add_e
     return False
 
 
+def generate_event_id(summary, event_day, event_start_time, event_link):
+    """
+    Googleカレンダー用の自前eventIdを生成する
+    - 同じ予定であれば毎回同じIDになるようにすることで、insertを冪等にする
+    """
+    # テスト実行時は毎回ランダムなIDを使い、本番用IDと衝突しないようにする
+    if hasattr(args, "test_run") and args.test_run:
+        return uuid.uuid4().hex  # 32桁のランダムID（英数字）
+
+    # event_start_time から時刻文字列を取得
+    if isinstance(event_start_time, datetime.datetime):
+        time_str = event_start_time.strftime("%H:%M")
+    elif isinstance(event_start_time, str) and event_start_time:
+        time_str = event_start_time
+    else:
+        time_str = ""
+
+    base = f"mw-{event_day}-{summary}"
+    if time_str:
+        base += f"-{time_str}"
+
+    if event_link:
+        cleaned_link = str(event_link).strip()
+        cleaned_link = cleaned_link.replace("https://mihowatanabe.jp", "")
+        cleaned_link = cleaned_link.replace("/", "-")
+        base += f"-{cleaned_link}"
+
+    # eventId は英数字と -_ のみが推奨なので、SHA1 の16進文字列を使う
+    event_id = hashlib.sha1(base.encode("utf-8")).hexdigest()[:32]
+    return event_id
+
+
 def prepare_info_for_calendar(
     event_name, event_time, previous_add_event_lists, confirm
 ):
@@ -572,8 +608,12 @@ def search_events(service, calendar_id, start_datetime, end_datetime):
 
 
 def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event_end_time, event_link):
+    # 自前 eventId を生成（同一予定であれば毎回同じIDになる）
+    event_id = generate_event_id(summary, event_day, event_start_time, event_link)
+
     if(event_start_time == ""):
         event = {
+            "id": event_id,
             "summary": summary,
             "description": f"{event_link}",
             "start": {"date": event_day, "timeZone": "Japan",},
@@ -581,13 +621,22 @@ def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event
         }
     else:
         event = {
+            "id": event_id,
             "summary": summary,
             "description": f"{event_link}",
             "start": {"dateTime": event_start_time.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Japan",},
             "end": {"dateTime": event_end_time.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Japan",},
         }
 
-    event = service.events().insert(calendarId=calendarId, body=event,).execute()
+    try:
+        # eventId を指定して insert することで、同じ予定は 409 Conflict となり二重登録されない
+        service.events().insert(calendarId=calendarId, body=event).execute()
+    except HttpError as e:
+        # すでに同じ eventId のイベントがある場合は 409 になるので、重複として無視
+        if hasattr(e, "resp") and getattr(e.resp, "status", None) == 409:
+            print(f"already exists in calendar (id={event_id}): {event_day} {summary}")
+        else:
+            raise
 
 
 me = singleton.SingleInstance() 
@@ -676,10 +725,12 @@ for event_time, event_name, event_link, article_url in schedule_list:
             if args.no_calendar:
                 print("Googleカレンダーへの追加をスキップします。")
             else:
+                # 実際のイベント日付（年を含む）を使用して eventId を生成するため、開始日時から日付文字列を作成
+                event_day_for_id = event_start_time.strftime("%Y-%m-%d")
                 add_info_to_calendar(
                     calendarId,
                     event_name,
-                    event_time,
+                    event_day_for_id,
                     event_start_time,
                     event_end_time,
                     article_url,

@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 config.env
+token.pickle
+credentials_mw.json
