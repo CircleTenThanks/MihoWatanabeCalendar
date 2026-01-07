@@ -156,15 +156,30 @@ def get_schedule_info(article_url):
     body_rich = data.get("bodyRichText") or {}
     lines = extract_text_lines_from_body_rich(body_rich)
 
-    # 「x月y日」を探す
+    # 1) 「YYYY年MM月DD日」「YYYY/MM/DD」「YYYY.MM.DD」形式を優先的に探す
+    for line in lines:
+        m_full = (
+            re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', line)
+            or re.search(r'(\d{4})/(\d{1,2})/(\d{1,2})', line)
+            or re.search(r'(\d{4})\.(\d{1,2})\.(\d{1,2})', line)
+        )
+        if m_full:
+            year = int(m_full.group(1))
+            month = int(m_full.group(2))
+            day = int(m_full.group(3))
+            event_time = f"{year:04d}-{month:02d}-{day:02d}"
+            break
+
+    # 2) 年なし「MM月DD日」しかない場合は、近い年を推定するロジックにフォールバック
     target_year = datetime.datetime.now().year
     for line in lines:
+        if event_time:
+            break
         m = re.search(r'(\d{1,2})月(\d{1,2})日', line)
         if m:
             month = int(m.group(1))
             day = int(m.group(2))
             event_time = f"{target_year}-{month:02d}-{day:02d}"
-            break
 
     # 見つからない場合は publishTime をフォールバックに使う (例: "2026.01.06")
     if not event_time:
