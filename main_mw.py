@@ -6,6 +6,7 @@ from tendo import singleton
 import jaconv
 import re
 import uuid
+import urllib.parse
 
 import requests
 from bs4 import BeautifulSoup
@@ -79,162 +80,123 @@ def get_schedule_list(start_page, end_page):
             link_tag = article.find_parent("a", href=True)
             if link_tag:
                 article_url = f"https://mihowatanabe.jp{link_tag['href']}"
-                article_result = requests.get(article_url)
-                if article_result.status_code == 200:
-                    article_soup = BeautifulSoup(article_result.content, features="lxml")
-                    
-                    # 記事から日付とイベント名を抽出
-                    event_time, event_name, event_link = get_schedule_info(article_soup)
-                    if event_time and event_name:
-                        schedule_list.append((event_time, event_name, event_link, article_url))
+                # 記事詳細APIから日付とイベント名を抽出（HTMLは利用しない）
+                event_time, event_name, event_link = get_schedule_info(article_url)
+                if event_time and event_name:
+                    schedule_list.append((event_time, event_name, event_link, article_url))
 
             time.sleep(1)  # サーバーへの負荷を解消
 
     return schedule_list
 
 
-def get_schedule_info(article_soup):
-    # イベント名を取得 - Chakra UIの動的クラス名に対応
-    event_name = None
-    
-    # chakra-textクラスを持つh1要素を検索（CSSハッシュ部分は無視）
-    h1_elements = article_soup.find_all("h1")
-    for h1 in h1_elements:
-        if h1.get("class") and any("chakra-text" in cls for cls in h1.get("class")):
-            event_name = h1.get_text(strip=True)
-            break
-    
-    # フォールバック - 最初のh1要素を使用
-    if not event_name:
-        h1_element = article_soup.find("h1")
-        if h1_element:
-            event_name = h1_element.get_text(strip=True)
-    
-    if not event_name:
+def fetch_news_detail_json(article_url: str) -> dict:
+    """
+    ニュース詳細ページが内部で叩いているJSON APIからデータを取得する。
+    例: https://mihowatanabe.jp/news/detail/{id}
+         -> https://mihowatanabe.jp/api/news/{id}/fc-server
+    """
+    parsed = urllib.parse.urlparse(article_url)
+    path = parsed.path  # /news/detail/{id}
+    news_id = path.rstrip("/").split("/")[-1]
+
+    api_url = f"https://mihowatanabe.jp/api/news/{news_id}/fc-server"
+    resp = requests.get(api_url, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def extract_text_lines_from_body_rich(body_rich: dict) -> list[str]:
+    """
+    bodyRichText フィールドから、各段落ごとのプレーンテキスト行を抽出する
+    """
+    contents = body_rich.get("content") or []
+    lines: list[str] = []
+
+    for node in contents:
+        if node.get("nodeType") != "paragraph":
+            continue
+        text_parts: list[str] = []
+
+        def collect_text(n):
+            # text ノード
+            if n.get("nodeType") == "text":
+                val = n.get("value") or ""
+                if val:
+                    text_parts.append(val)
+            # hyperlink など、子要素をたどる
+            for child in n.get("content") or []:
+                collect_text(child)
+
+        for child in node.get("content") or []:
+            collect_text(child)
+
+        line = "".join(text_parts).strip()
+        if line:
+            lines.append(line)
+
+    return lines
+
+
+def get_schedule_info(article_url):
+    """
+    ニュース詳細APIからイベント日付とタイトル等を取得する（HTMLは使わない）
+    """
+    try:
+        data = fetch_news_detail_json(article_url)
+    except Exception as e:
+        print(f"failed to fetch detail json for {article_url}: {e}")
         return None, None, None
 
-    # 記事内容から実際のイベント日時を取得
-    event_time = None
-    
-    # 特定のクラスを持つdiv要素を検索
-    content_div = article_soup.find("div", {"class": "css-ikmllp"})
-    
-    # フォールバック - 記事本文らしいdiv要素を検索
-    if not content_div:
-        # 記事本文の可能性が高いdiv要素を検索
-        potential_content_divs = article_soup.find_all("div")
-        for div in potential_content_divs:
-            if div.get("class") and any("css-" in cls for cls in div.get("class")):
-                # 段落要素が含まれているかチェック
-                if div.find_all("p"):
-                    content_div = div
-                    break
-    
-    if content_div:
-        # chakra-textクラスを持つp要素を検索
-        content_paragraphs = content_div.find_all("p")
-        chakra_paragraphs = []
-        for p in content_paragraphs:
-            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
-                chakra_paragraphs.append(p)
-        
-        # フォールバック - すべてのp要素を使用
-        if not chakra_paragraphs:
-            chakra_paragraphs = content_paragraphs
-        
-        for p in chakra_paragraphs:
-            text = p.get_text(strip=True)
-            # "8月28日（木）25:00〜" のような形式を検索
-            time_pattern = re.search(r'(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})', text)
-            if time_pattern:
-                month = int(time_pattern.group(1))
-                day = int(time_pattern.group(2))
-                hour = int(time_pattern.group(3))
-                
-                # 現在の年を使用
-                current_year = datetime.datetime.now().year
-                
-                # 25時などの表記を翌日に変換
-                if hour >= 24:
-                    day += 1
-                    # 簡単な月末処理
-                    if day > 31:
-                        day = 1
-                        month += 1
-                        if month > 12:
-                            month = 1
-                            current_year += 1
-                
-                event_time = f"{current_year}-{month:02d}-{day:02d}"
-                break
-    
-    # フォールバック: 記事の投稿日を使用
-    if not event_time:
-        # chakra-textクラスを持つp要素から日付を検索
-        all_p_elements = article_soup.find_all("p")
-        for p in all_p_elements:
-            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
-                date_text = p.get_text(strip=True)
-                # "2025.08.22" 形式を "2025-08-22" 形式に変換
-                if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
-                    event_time = date_text.replace('.', '-')
-                    break
-        
-        # フォールバック - 日付らしいテキストを検索
-        if not event_time:
-            for p in all_p_elements:
-                date_text = p.get_text(strip=True)
-                if re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', date_text):
-                    event_time = date_text.replace('.', '-')
-                    break
+    # タイトル
+    event_name = data.get("title")
 
-    # 記事のリンクは現在のURLから取得
-    current_url = article_soup.find("link", {"rel": "canonical"})
-    if current_url:
-        event_link = current_url.get('href', '')
-        if event_link.startswith('https://mihowatanabe.jp'):
-            event_link = event_link.replace('https://mihowatanabe.jp', '')
-    else:
-        event_link = "/news/detail/unknown"
+    # 本文から日付を探す
+    event_time = None
+    body_rich = data.get("bodyRichText") or {}
+    lines = extract_text_lines_from_body_rich(body_rich)
+
+    # 「x月y日」を探す
+    target_year = datetime.datetime.now().year
+    for line in lines:
+        m = re.search(r'(\d{1,2})月(\d{1,2})日', line)
+        if m:
+            month = int(m.group(1))
+            day = int(m.group(2))
+            event_time = f"{target_year}-{month:02d}-{day:02d}"
+            break
+
+    # 見つからない場合は publishTime をフォールバックに使う (例: "2026.01.06")
+    if not event_time:
+        publish_time = data.get("publishTime")
+        if isinstance(publish_time, str) and re.match(r'\d{4}\.\d{1,2}\.\d{1,2}', publish_time):
+            y, m, d = publish_time.split(".")
+            event_time = f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+
+    # イベントリンク：URL のパス部分
+    parsed = urllib.parse.urlparse(article_url)
+    event_link = parsed.path or "/news/detail/unknown"
+
+    if not event_name or not event_time:
+        return None, None, None
 
     return event_time, event_name, event_link
 
 
 def get_schedule_time(event_time, url):
-    result = requests.get(url)
-    soup = BeautifulSoup(result.content, features="lxml")
+    """
+    記事詳細API(bodyRichText)から本文テキストを取得し、そこから開始・終了時刻を解析する
+    """
+    try:
+        data = fetch_news_detail_json(url)
+    except Exception as e:
+        print(f"failed to fetch detail json for time parsing: {url} {e}")
+        return []
 
-    # 記事の本文を取得（Chakra UIの動的クラス名に対応）
-    content_div = soup.find("div", {"class": "css-ikmllp"})
-    
-    # フォールバック - 記事本文らしいdiv要素を検索
-    if not content_div:
-        # 記事本文の可能性が高いdiv要素を検索
-        potential_content_divs = soup.find_all("div")
-        for div in potential_content_divs:
-            if div.get("class") and any("css-" in cls for cls in div.get("class")):
-                # 段落要素が含まれているかチェック
-                if div.find_all("p"):
-                    content_div = div
-                    break
-    
-    if content_div:
-        # chakra-textクラスを持つp要素を検索
-        all_p_elements = content_div.find_all("p")
-        chakra_paragraphs = []
-        for p in all_p_elements:
-            if p.get("class") and any("chakra-text" in cls for cls in p.get("class")):
-                chakra_paragraphs.append(p)
-        
-        # フォールバック - すべてのp要素を使用
-        if chakra_paragraphs:
-            line_list = chakra_paragraphs
-        else:
-            line_list = all_p_elements
-    else:
-        # フォールバック: 従来の方法
-        schedule_detail = soup.find("div")
-        line_list = schedule_detail.find_all("p") if schedule_detail else []
+    body_rich = data.get("bodyRichText") or {}
+    # 1行ごとのプレーンテキストとして扱う
+    lines = extract_text_lines_from_body_rich(body_rich)
+    line_list = lines
 
     # 複数の日時を格納するリスト（重複を防ぐためsetを使用）
     event_times_set = set()
@@ -263,7 +225,7 @@ def get_schedule_time(event_time, url):
             return current_year
 
     for line in line_list:
-        original_text = line.get_text(strip=True) if hasattr(line, 'get_text') else str(line)
+        original_text = line if isinstance(line, str) else str(line)
         
         # 既に処理済みの行はスキップ
         if original_text in processed_lines:
