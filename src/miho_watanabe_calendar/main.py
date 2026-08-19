@@ -22,11 +22,7 @@ from google.auth.transport.requests import Request
 
 import argparse
 
-# コマンドライン引数のパーサーを作成
-parser = argparse.ArgumentParser(description='Googleカレンダーへの追加を防ぐモードを設定します。')
-parser.add_argument('--no-calendar', action='store_true', help='Googleカレンダーへの追加を防ぎます。')
-parser.add_argument('--test-run', action='store_true', help='テスト用にランダムなeventIdを使用します。')
-args = parser.parse_args()
+args = None
 
 
 def build_calendar_api():
@@ -616,99 +612,110 @@ def add_info_to_calendar(calendarId, summary, event_day, event_start_time, event
             raise
 
 
-me = singleton.SingleInstance() 
+def main(argv=None):
+    global service, calendarId, args
+    parser = argparse.ArgumentParser(description='Googleカレンダーへの追加を防ぐモードを設定します。')
+    parser.add_argument('--no-calendar', action='store_true', help='Googleカレンダーへの追加を防ぎます。')
+    parser.add_argument('--test-run', action='store_true', help='テスト用にランダムなeventIdを使用します。')
+    args = parser.parse_args(argv)
 
-# API系
-calendarId = (
-    os.environ['CALENDAR_ID_MW']  # NOTE:自分のカレンダーID
-)
-service = build_calendar_api()
+    me = singleton.SingleInstance() 
 
-schedule_list = get_schedule_list(1, 1)  # ページ1から1まで処理
+    # API系
+    calendarId = (
+        os.environ['CALENDAR_ID_MW']  # NOTE:自分のカレンダーID
+    )
+    service = build_calendar_api()
 
-if schedule_list == None:
-    sys.exit()
+    schedule_list = get_schedule_list(1, 1)  # ページ1から1まで処理
 
-# 初期化
-if schedule_list:
-    # スケジュールリストを日付順にソート
-    schedule_list.sort(key=lambda x: x[0])
-    
-    # スケジュールリストから期間を計算
-    start_day = schedule_list[0][0]  # 最初のイベントの日付（最も古い日付）
-    end_day = schedule_list[-1][0]   # 最後のイベントの日付（最も新しい日付）
-    
-    start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
-    start_datetime = start_datetime + datetime.timedelta(days=-1)
-    end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
-    # 記事内の複数日付（後半日付）を取りこぼさないように余裕を持たせる
-    end_datetime = end_datetime + datetime.timedelta(days=30)
-    
-    # 既存のイベントを取得
-    previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
-else:
-    previous_add_event_lists = []
+    if schedule_list == None:
+        sys.exit()
 
-for event_time, event_name, event_link, article_url in schedule_list:
-    # 時刻情報を取得
-    event_times = get_schedule_time(event_time, article_url)
-    
-    # 時刻情報がない場合の処理
-    if not event_times:
-        # 重複チェック
-        if check_duplicate_event(
-            event_name,
-            event_time,
-            "",  # 時刻情報なし
-            previous_add_event_lists,
-            article_url,
-        ):
-            continue
+    # 初期化
+    if schedule_list:
+        # スケジュールリストを日付順にソート
+        schedule_list.sort(key=lambda x: x[0])
 
-        print("add:" + event_time + " " + event_name)
+        # スケジュールリストから期間を計算
+        start_day = schedule_list[0][0]  # 最初のイベントの日付（最も古い日付）
+        end_day = schedule_list[-1][0]   # 最後のイベントの日付（最も新しい日付）
 
-        # カレンダーへ情報を追加
-        if args.no_calendar:
-            print("Googleカレンダーへの追加をスキップします。")
-        else:
-            add_info_to_calendar(
-                calendarId,
-                event_name,
-                event_time,
-                "",  # 時刻なし
-                "",  # 時刻なし
-                article_url,
-            )
+        start_datetime = datetime.datetime.strptime(start_day, "%Y-%m-%d")
+        start_datetime = start_datetime + datetime.timedelta(days=-1)
+        end_datetime = datetime.datetime.strptime(end_day, "%Y-%m-%d")
+        # 記事内の複数日付（後半日付）を取りこぼさないように余裕を持たせる
+        end_datetime = end_datetime + datetime.timedelta(days=30)
+
+        # 既存のイベントを取得
+        previous_add_event_lists = search_events(service, calendarId, start_datetime, end_datetime)
     else:
-        # 複数の時刻情報がある場合の処理
-        for i, (event_start_time, event_end_time) in enumerate(event_times):
-            
-            # 重複チェック（時刻情報がある場合は時刻付きの日付で）
-            check_date = event_start_time.strftime("%Y-%m-%d")
-            check_time = event_start_time.strftime("%H:%M")
-            
+        previous_add_event_lists = []
+
+    for event_time, event_name, event_link, article_url in schedule_list:
+        # 時刻情報を取得
+        event_times = get_schedule_time(event_time, article_url)
+
+        # 時刻情報がない場合の処理
+        if not event_times:
+            # 重複チェック
             if check_duplicate_event(
                 event_name,
-                check_date,
-                check_time,
+                event_time,
+                "",  # 時刻情報なし
                 previous_add_event_lists,
                 article_url,
             ):
                 continue
 
-            print(f"add: {event_start_time.strftime('%Y-%m-%d %H:%M')} {event_name}")
+            print("add:" + event_time + " " + event_name)
 
             # カレンダーへ情報を追加
             if args.no_calendar:
                 print("Googleカレンダーへの追加をスキップします。")
             else:
-                # 実際のイベント日付（年を含む）を使用して eventId を生成するため、開始日時から日付文字列を作成
-                event_day_for_id = event_start_time.strftime("%Y-%m-%d")
                 add_info_to_calendar(
                     calendarId,
                     event_name,
-                    event_day_for_id,
-                    event_start_time,
-                    event_end_time,
+                    event_time,
+                    "",  # 時刻なし
+                    "",  # 時刻なし
                     article_url,
                 )
+        else:
+            # 複数の時刻情報がある場合の処理
+            for i, (event_start_time, event_end_time) in enumerate(event_times):
+
+                # 重複チェック（時刻情報がある場合は時刻付きの日付で）
+                check_date = event_start_time.strftime("%Y-%m-%d")
+                check_time = event_start_time.strftime("%H:%M")
+
+                if check_duplicate_event(
+                    event_name,
+                    check_date,
+                    check_time,
+                    previous_add_event_lists,
+                    article_url,
+                ):
+                    continue
+
+                print(f"add: {event_start_time.strftime('%Y-%m-%d %H:%M')} {event_name}")
+
+                # カレンダーへ情報を追加
+                if args.no_calendar:
+                    print("Googleカレンダーへの追加をスキップします。")
+                else:
+                    # 実際のイベント日付（年を含む）を使用して eventId を生成するため、開始日時から日付文字列を作成
+                    event_day_for_id = event_start_time.strftime("%Y-%m-%d")
+                    add_info_to_calendar(
+                        calendarId,
+                        event_name,
+                        event_day_for_id,
+                        event_start_time,
+                        event_end_time,
+                        article_url,
+                    )
+
+
+if __name__ == "__main__":
+    main()
