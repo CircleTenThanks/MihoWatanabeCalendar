@@ -3,7 +3,7 @@ name = "miho-watanabe-calendar"
 version = "0.1.0"
 description = "渡邉美穂さんのスケジュールをGoogleカレンダーへ自動登録する"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.14.2",
     "google-api-python-client>=2.187.0",
