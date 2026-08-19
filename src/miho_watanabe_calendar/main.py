@@ -1,26 +1,22 @@
-import time
-import pickle
+import argparse
+import datetime
+import hashlib
 import os
-import sys
-from tendo import singleton
-import jaconv
+import pickle
 import re
-import uuid
+import sys
+import time
 import urllib.parse
+import uuid
 
+import jaconv
 import requests
 from bs4 import BeautifulSoup
-import hashlib
-
-import datetime
-from dateutil.relativedelta import relativedelta
-
+from google.auth.transport.requests import Request
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
-
-import argparse
+from tendo import singleton
 
 args = None
 
@@ -255,11 +251,11 @@ def get_schedule_time(event_time, url):
         # 12時間表記で記載されているパターン
         hour12_flg = False
         date_text_arr = re.search(r'午後(\d+)', line_text)
-        if date_text_arr != None:
+        if date_text_arr is not None:
             if int(date_text_arr[1]) <= 12:
                 hour12_flg = True
         date_text_arr = re.search(r'(よる|夜)(\d+)', line_text)
-        if date_text_arr != None:
+        if date_text_arr is not None:
             if 6 <= int(date_text_arr[2]) <= 12:
                 hour12_flg = True
 
@@ -302,7 +298,7 @@ def get_schedule_time(event_time, url):
         # 年月日、開始時分、終了時分まですべて記載されているパターン（優先度2）
         date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line_text)
 
-        if date_text_arr != None:
+        if date_text_arr is not None:
             year = int(date_text_arr[1])
             month = int(date_text_arr[2])
             day = int(date_text_arr[3])
@@ -329,7 +325,7 @@ def get_schedule_time(event_time, url):
         # 年月日、開始時分が記載されているパターン（優先度3）
         date_text_arr = re.search(r'(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)', line_text)
 
-        if date_text_arr != None:
+        if date_text_arr is not None:
             year = int(date_text_arr[1])
             month = int(date_text_arr[2])
             day = int(date_text_arr[3])
@@ -350,7 +346,7 @@ def get_schedule_time(event_time, url):
         # 月日、開始時分、終了時分が記載されているパターン（優先度4）
         date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)', line_text)
 
-        if date_text_arr != None:
+        if date_text_arr is not None:
             # 年を動的に判定
             month = int(date_text_arr[1])
             target_year = get_target_year(month)
@@ -379,7 +375,7 @@ def get_schedule_time(event_time, url):
         # 月日、開始時分が記載されているパターン（優先度5）
         date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):(\d+)', line_text)
 
-        if date_text_arr != None:
+        if date_text_arr is not None:
             # 年を動的に判定
             month = int(date_text_arr[1])
             target_year = get_target_year(month)
@@ -402,7 +398,7 @@ def get_schedule_time(event_time, url):
         # 月日、開始時が記載されているパターン（優先度6）
         date_text_arr = re.search(r'(\d+)/(\d+).+?(\d+):', line_text)
 
-        if date_text_arr != None:
+        if date_text_arr is not None:
             # 年を動的に判定
             month = int(date_text_arr[1])
             target_year = get_target_year(month)
@@ -619,7 +615,7 @@ def main(argv=None):
     parser.add_argument('--test-run', action='store_true', help='テスト用にランダムなeventIdを使用します。')
     args = parser.parse_args(argv)
 
-    me = singleton.SingleInstance() 
+    singleton.SingleInstance() 
 
     # API系
     calendarId = (
@@ -629,7 +625,7 @@ def main(argv=None):
 
     schedule_list = get_schedule_list(1, 1)  # ページ1から1まで処理
 
-    if schedule_list == None:
+    if schedule_list is None:
         sys.exit()
 
     # 初期化
