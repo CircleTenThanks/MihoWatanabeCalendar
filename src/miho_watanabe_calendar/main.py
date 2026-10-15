@@ -4,7 +4,7 @@
 """渡邉美穂さんのスケジュールをGoogleカレンダーへ登録する."""
 
 import argparse
-import datetime
+import datetime as dt
 import hashlib
 import logging
 import os
@@ -27,7 +27,7 @@ from tendo import singleton
 LOGGER = logging.getLogger(__name__)
 _CALENDAR_SCOPES = ("https://www.googleapis.com/auth/calendar",)
 _CREDENTIALS_PATH = "credentials_mw.json"
-_JST = datetime.timezone(datetime.timedelta(hours=9))
+_JST = dt.timezone(dt.timedelta(hours=9))
 _REQUEST_TIMEOUT_SECONDS = 10
 _LIST_TIMEOUT_SECONDS = 30
 _SCRAPE_WAIT_SECONDS = 1
@@ -43,7 +43,7 @@ _MAX_EVENT_RESULTS = 2500
 _EVENT_ID_LENGTH = 32
 _LOOKBACK_DAYS = 1
 _LOOKAHEAD_DAYS = 30
-_DEFAULT_DURATION = datetime.timedelta(hours=1)
+_DEFAULT_DURATION = dt.timedelta(hours=1)
 _SITE_ORIGIN = "https://mihowatanabe.jp"
 
 
@@ -55,7 +55,7 @@ class _ScheduleParser(Protocol):
         line_text: str,
         *,
         hour12: bool,
-    ) -> tuple[datetime.datetime, datetime.datetime] | None:
+    ) -> tuple[dt.datetime, dt.datetime] | None:
         """1行を解析する.
 
         Args:
@@ -74,8 +74,8 @@ class CalendarEventDraft:
 
     summary: str
     event_day: str
-    start_time: datetime.datetime | None
-    end_time: datetime.datetime | None
+    start_time: dt.datetime | None
+    end_time: dt.datetime | None
     event_link: str
 
 
@@ -266,7 +266,7 @@ def get_schedule_info(
         if event_time:
             break
 
-    target_year = datetime.datetime.now(tz=_JST).year
+    target_year = dt.datetime.now(tz=_JST).year
     if event_time is None:
         event_time = _parse_month_day_with_year(lines, target_year)
 
@@ -310,13 +310,13 @@ def _parse_publish_time(publish_time: object) -> str | None:
     return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
 
-def _now_jst() -> datetime.datetime:
+def _now_jst() -> dt.datetime:
     """現在の日本時間を返す.
 
     Returns:
         タイムゾーン付きの現在日時.
     """
-    return datetime.datetime.now(tz=_JST)
+    return dt.datetime.now(tz=_JST)
 
 
 def _target_year_for_month(month: int) -> int:
@@ -380,7 +380,7 @@ def over_24h_datetime(
     month: int,
     day: int,
     times: str,
-) -> datetime.datetime:
+) -> dt.datetime:
     """24時間以上の時刻をdatetimeに変換する.
 
     Args:
@@ -394,20 +394,20 @@ def over_24h_datetime(
     """
     hour, minute = times.split(":")
     minutes = int(hour) * 60 + int(minute)
-    dt = datetime.datetime(
+    base = dt.datetime(
         year=int(year),
         month=int(month),
         day=int(day),
         tzinfo=_JST,
     )
-    return dt + datetime.timedelta(minutes=minutes)
+    return base + dt.timedelta(minutes=minutes)
 
 
 def _parse_md_hour_minute(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """`8/28 25:00` 形式を解析する.
 
     Args:
@@ -438,7 +438,7 @@ def _parse_md_hour_minute(
             if month > _MONTHS_PER_YEAR:
                 month = 1
                 target_year += 1
-    event_start = datetime.datetime(target_year, month, day, hour, minute, tzinfo=_JST)
+    event_start = dt.datetime(target_year, month, day, hour, minute, tzinfo=_JST)
     return event_start, event_start + _DEFAULT_DURATION
 
 
@@ -446,7 +446,7 @@ def _parse_ymd_range(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """年月日と開始・終了時刻が揃った行を解析する.
 
     Args:
@@ -479,7 +479,7 @@ def _parse_ymd_start(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """年月日と開始時刻だけの行を解析する.
 
     Args:
@@ -510,7 +510,7 @@ def _parse_md_range(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始・終了時刻の行を解析する.
 
     Args:
@@ -545,7 +545,7 @@ def _parse_md_start(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始時刻の行を解析する.
 
     Args:
@@ -576,7 +576,7 @@ def _parse_md_hour_only(
     line_text: str,
     *,
     hour12: bool,
-) -> tuple[datetime.datetime, datetime.datetime] | None:
+) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始時だけの行を解析する.
 
     Args:
@@ -608,9 +608,9 @@ _SCHEDULE_PARSERS: tuple[_ScheduleParser, ...] = (
 
 
 def _remember_event_time(
-    event_times: dict[str, tuple[datetime.datetime, datetime.datetime]],
-    event_start: datetime.datetime,
-    event_end: datetime.datetime,
+    event_times: dict[str, tuple[dt.datetime, dt.datetime]],
+    event_start: dt.datetime,
+    event_end: dt.datetime,
 ) -> None:
     """重複しない日時を記録する."""
     time_key = (
@@ -622,7 +622,7 @@ def _remember_event_time(
 
 def get_schedule_time(
     url: str,
-) -> list[tuple[datetime.datetime, datetime.datetime]]:
+) -> list[tuple[dt.datetime, dt.datetime]]:
     """記事詳細APIから開始・終了時刻を解析する.
 
     Args:
@@ -639,7 +639,7 @@ def get_schedule_time(
 
     body_rich_raw = data.get("bodyRichText") or {}
     body_rich = body_rich_raw if isinstance(body_rich_raw, dict) else {}
-    event_times: dict[str, tuple[datetime.datetime, datetime.datetime]] = {}
+    event_times: dict[str, tuple[dt.datetime, dt.datetime]] = {}
     processed_lines: set[str] = set()
 
     for line in extract_text_lines_from_body_rich(body_rich):
@@ -704,7 +704,7 @@ def check_duplicate_event(
 def generate_event_id(
     summary: str,
     event_day: str,
-    event_start_time: datetime.datetime | None,
+    event_start_time: dt.datetime | None,
     event_link: str,
     *,
     test_run: bool,
@@ -726,7 +726,7 @@ def generate_event_id(
     if test_run:
         return uuid.uuid4().hex
 
-    if isinstance(event_start_time, datetime.datetime):
+    if isinstance(event_start_time, dt.datetime):
         time_str = event_start_time.strftime("%H:%M")
     else:
         time_str = ""
@@ -763,7 +763,7 @@ def change_event_starttime_to_jst(
             events_starttime.append((event["start"]["date"], ""))
             continue
         str_event_uct_time = event["start"]["dateTime"]
-        event_jst_time = datetime.datetime.strptime(
+        event_jst_time = dt.datetime.strptime(
             str_event_uct_time,
             "%Y-%m-%dT%H:%M:%S%z",
         )
@@ -777,8 +777,8 @@ def change_event_starttime_to_jst(
 def search_events(
     service: Resource,
     calendar_id: str,
-    start_datetime: datetime.datetime,
-    end_datetime: datetime.datetime,
+    start_datetime: dt.datetime,
+    end_datetime: dt.datetime,
 ) -> list[str]:
     """期間内の既存イベントキーを取得する.
 
@@ -913,14 +913,14 @@ def _existing_event_keys(
     if not schedule_list:
         return []
     schedule_list.sort(key=itemgetter(0))
-    start_datetime = datetime.datetime.strptime(
+    start_datetime = dt.datetime.strptime(
         schedule_list[0][0],
         "%Y-%m-%d",
-    ).replace(tzinfo=_JST) + datetime.timedelta(days=-_LOOKBACK_DAYS)
-    end_datetime = datetime.datetime.strptime(
+    ).replace(tzinfo=_JST) + dt.timedelta(days=-_LOOKBACK_DAYS)
+    end_datetime = dt.datetime.strptime(
         schedule_list[-1][0],
         "%Y-%m-%d",
-    ).replace(tzinfo=_JST) + datetime.timedelta(days=_LOOKAHEAD_DAYS)
+    ).replace(tzinfo=_JST) + dt.timedelta(days=_LOOKAHEAD_DAYS)
     return search_events(service, calendar_id, start_datetime, end_datetime)
 
 
