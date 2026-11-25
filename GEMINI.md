@@ -32,7 +32,7 @@
 - **`--test-run`**: テスト用カレンダー等で検証する際、固定ハッシュではなくランダムなUUIDを `eventId` に使うフラグ。
 - **`--start-page` / `--end-page` / `--since-date`**: 取得する一覧ページ範囲（デフォルト `1`〜`1`）や登録対象の最小日付（`YYYY-MM-DD`）を指定して過去分をバックフィル登録できるオプション。また、過去記事を再解析する際にも年推定が狂わないよう、`_target_year_for_month()` は記事の公開日（`publishTime`）を基準日（`base_date`）として西暦年を推定する。
 - **`tendo.singleton.SingleInstance()`**: バッチの多重起動を防ぐ。
-- **親リポジトリ（RenderWrapper）連携**: 本番の Render.com CRON JOB では親リポジトリ `RenderWrapper` から `miho_watanabe_calendar.main:main` が引数なしで呼び出される。`main(argv: list[str] | None = None)` のシグネチャと `src` レイアウトを維持すること。
+- **GitHub Actions による定期実行**: 本番環境では GitHub Actions（`.github/workflows/sync-calendar.yml`）の `schedule`（`11 2 * * *`）および `workflow_dispatch` によって `uv run --frozen --no-dev miho-watanabe-calendar`（`miho_watanabe_calendar.main:main`）が定期実行される。`main(argv: list[str] | None = None)` のシグネチャと `src` レイアウトを維持すること。
 
 ---
 
@@ -76,5 +76,5 @@ uv run miho-watanabe-calendar --no-calendar
   - `Upgrade: ...`（依存パッケージのバージョン更新）
 
 ### 実行環境・認証情報
-- 環境変数: `CALENDAR_ID_MW`（`config.env` および `scripts/load_env.sh` で読み込み可能）
-- サービスアカウント認証ファイル: カレントディレクトリの `credentials_mw.json`（Git管理外・秘匿情報のため絶対にコミットしない）
+- 環境変数: `CALENDAR_ID_MW`（ローカルでは `config.env` および `scripts/load_env.sh` で読み込み可能。GitHub Actions では Secrets の `CALENDAR_ID_MW` に設定）
+- サービスアカウント認証ファイル: カレントディレクトリの `credentials_mw.json`（Git管理外・秘匿情報のため絶対にコミットしない。GitHub Actions では Secrets の `CREDENTIALS_MW_JSON` から実行時に生成する）
