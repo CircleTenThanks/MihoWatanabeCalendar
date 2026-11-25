@@ -11,24 +11,24 @@ description: >-
 
 ## 1. データ取得と日時解析の仕組み（`src/miho_watanabe_calendar/main.py`）
 
-1. **記事一覧の取得（`get_schedule_list`）**
-   - `https://mihowatanabe.jp/news/all/pages/{page}` から記事リンクを取得する。
-   - `div.css-izgksv` が見つからない場合は `_fallback_article_divs()` で `css-` クラスを持つ `div` の親 `a[href]` を辿る。
+1. **記事一覧の取得（`get_schedule_list` / `_extract_article_urls_from_list_html`）**
+   - `https://mihowatanabe.jp/news/all/pages/{page}` の `<script id="__NEXT_DATA__">` 内 `props.pageProps.newsListData` から記事IDを取得する。
+   - `newsListData` が取得できない場合は、HTML内の `<a href="/news/detail/...">` リンクへフォールバックする。
 
-2. **記事詳細JSONの取得と基準日の決定（`fetch_news_detail_json` / `get_schedule_info`）**
-   - `/news/detail/{id}` から末尾の `{id}` を取り出し、`https://mihowatanabe.jp/api/news/{id}/fc-server` を取得する。
+2. **記事詳細データの取得と基準日の決定（`fetch_news_detail_json` / `get_schedule_info`）**
+   - `/news/detail/{id}` の `<script id="__NEXT_DATA__">` 内 `props.pageProps.newsDataForFree` を取得する（同一実行内では `_NEXT_DATA_CACHE` でキャッシュし、1記事につき1回のGETリクエストで完結させる）。
    - `bodyRichText` の段落（`nodeType == "paragraph"`）からプレーンテキスト行リスト（`extract_text_lines_from_body_rich`）を取り出す。
    - 基準日の決定優先順位：
      1. `_parse_full_date`: 本文中の年月日（`YYYY年M月D日`, `YYYY/M/D`, `YYYY.M.D`）
      2. `_parse_month_day_with_year`: 本文中の月日（`M月D日`）
-     3. `_parse_publish_time`: APIの `publishTime`（`YYYY.M.D`）
+     3. `_parse_publish_time`: 記事の `publishTime`（`YYYY.M.D`）
 
 3. **開始・終了時刻の抽出パイプライン（`get_schedule_time` / `_SCHEDULE_PARSERS`）**
    - 各段落を `_normalize_schedule_line()` で半角・記号正規化し、`_has_hour12_flag()` で「午後」「よる」「夜」の有無を判定した上で、`_SCHEDULE_PARSERS` の各パーサー関数を順番に試行する：
-     1. `_parse_md_hour_minute`: 年なし `M/D ... HH:MM`（24時超え対応、終了時刻は開始+1時間）
-     2. `_parse_ymd_range`: `YYYY/M/D ... HH:MM~HH:MM`
-     3. `_parse_ymd_start`: `YYYY/M/D ... HH:MM`
-     4. `_parse_md_range`: `M/D ... HH:MM~HH:MM`（年は `_target_year_for_month` で推定）
+     1. `_parse_ymd_range`: `YYYY/M/D ... HH:MM~HH:MM`
+     2. `_parse_ymd_start`: `YYYY/M/D ... HH:MM`
+     3. `_parse_md_range`: `M/D ... HH:MM~HH:MM`（年は `_target_year_for_month` で推定）
+     4. `_parse_md_hour_minute`: 年なし `M/D ... HH:MM`（24時超え対応、終了時刻は開始+1時間）
      5. `_parse_md_start`: `M/D ... HH:MM`（年は `_target_year_for_month` で推定）
      6. `_parse_md_hour_only`: `M/D ... HH:`（分省略パターン）
 

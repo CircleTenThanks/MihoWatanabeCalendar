@@ -6,10 +6,10 @@
 
 ## 1. 設計思想とアーキテクチャ上の重要ルール
 
-### 1. API直接取得と動的クラス名へのフォールバック
-- **ニュース一覧（HTML）**: `https://mihowatanabe.jp/news/all/pages/{page}` は Chakra UI 等の動的クラス名（例: `css-izgksv`）が使われており、サイト改修でクラス名が変わることがある。そのため、特定クラスで見つからない場合は `_fallback_article_divs()`（`css-` を含む `div` かつ親に `<a href=...>` を持つ要素）へフォールバックする二段構えを維持する。
-- **ニュース詳細（JSON API）**: 詳細ページ（`/news/detail/{id}`）はクライアントサイドレンダリングのため、HTMLをスクレイピングするのではなく、内部のJSON API（`https://mihowatanabe.jp/api/news/{id}/fc-server`）を直接叩いて `title`, `publishTime`, `bodyRichText` を取得する。
-- **サーバー負荷軽減**: 記事ごとのAPIリクエスト間に必ず `_SCRAPE_WAIT_SECONDS = 1` のスリープを入れ、リクエストにはタイムアウト（`_REQUEST_TIMEOUT_SECONDS = 10`, `_LIST_TIMEOUT_SECONDS = 30`）を設定する。
+### 1. Next.js SSR (`__NEXT_DATA__`) からのデータ取得とフォールバック
+- **ニュース一覧**: `https://mihowatanabe.jp/news/all/pages/{page}` は Next.js (Tailwind CSS) で構成されており、HTML内の `<script id="__NEXT_DATA__">` の `props.pageProps.newsListData` に記事一覧JSONが埋め込まれている。一覧取得では `newsListData` の `id` 抽出を第一優先とし、構造変更時に備えて `a[href^="/news/detail/"]` タグからのURL抽出へフォールバックする二段構えを維持する（旧来の Chakra UI `css-*` クラスや `/api/news/{id}/fc-server` エンドポイントは廃止済み）。
+- **ニュース詳細**: 詳細ページ（`/news/detail/{id}`）も同様に `<script id="__NEXT_DATA__">` 内の `props.pageProps.newsDataForFree` に `title`, `publishTime`, `bodyRichText` が格納されているため、これを抽出・キャッシュして使用する。
+- **サーバー負荷軽減**: 記事ごとのリクエスト間に必ず `_SCRAPE_WAIT_SECONDS = 1` のスリープを入れ、リクエストにはタイムアウト（`_REQUEST_TIMEOUT_SECONDS = 10`, `_LIST_TIMEOUT_SECONDS = 30`）を設定する。
 
 ### 2. 自然言語テキストからの日時解析パイプライン
 公式サイトのニュース本文（`bodyRichText`）には定型のスケジュール欄がなく、自由記述のテキストで放送日時やイベント日時が書かれるため、以下のルールで解析する：
@@ -66,12 +66,13 @@ uv run miho-watanabe-calendar --no-calendar
 ```
 
 ### コミットメッセージ規約
-プレフィックスを付けた簡潔な日本語で記述する：
-- `Add: ...`（新規機能・ファイル追加）
-- `Update: ...`（仕様変更・改善・リファクタリング）
-- `Fix: ...`（バグ修正）
-- `Remove: ...`（不要ファイル・機能の削除）
-- `Upgrade: ...`（依存パッケージのバージョン更新）
+- コードや設定ファイルを変更した際は、完了報告時に**コミットメッセージ案を1つだけ提示する**こと。
+- 以下のプレフィックスを付けた簡潔な日本語で記述する：
+  - `Add: ...`（新規機能・ファイル追加）
+  - `Update: ...`（仕様変更・改善・リファクタリング）
+  - `Fix: ...`（バグ修正）
+  - `Remove: ...`（不要ファイル・機能の削除）
+  - `Upgrade: ...`（依存パッケージのバージョン更新）
 
 ### 実行環境・認証情報
 - 環境変数: `CALENDAR_ID_MW`（`config.env` および `scripts/load_env.sh` で読み込み可能）

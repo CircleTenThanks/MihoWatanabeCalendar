@@ -6,6 +6,7 @@
 import argparse
 import datetime as dt
 import hashlib
+import json
 import logging
 import os
 import re
@@ -18,7 +19,7 @@ from typing import Protocol
 
 import jaconv
 import requests
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from google.oauth2 import service_account
 from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
@@ -104,6 +105,80 @@ def remove_blank(text: str) -> str:
     return text.replace("\n", "").replace("\t", "").strip()
 
 
+_NEWS_DETAIL_PREFIX = "/news/detail/"
+_NEXT_DATA_CACHE: dict[str, dict[str, object]] = {}
+
+
+def _extract_next_page_props(html_content: bytes) -> dict[str, object]:
+    """HTML内の `__NEXT_DATA__` スクリプトから `pageProps` を抽出する.
+
+    Args:
+        html_content: 取得したHTMLバイト列。
+
+    Returns:
+        `pageProps` の辞書。取得できない場合は空辞書。
+    """
+    soup = BeautifulSoup(html_content, features="lxml")
+    script_tag = soup.find("script", id="__NEXT_DATA__")
+    if script_tag is None or not script_tag.string:
+        return {}
+    try:
+        payload = json.loads(script_tag.string)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    props = payload.get("props")
+    if not isinstance(props, dict):
+        return {}
+    page_props = props.get("pageProps")
+    return page_props if isinstance(page_props, dict) else {}
+
+
+def _extract_article_urls_from_list_html(html_content: bytes) -> list[str]:
+    """ニュース一覧HTMLから記事詳細URLのリストを抽出する.
+
+    `__NEXT_DATA__` の `newsListData` を優先し、存在しない場合は
+    `/news/detail/` で始まる `a[href]` タグへフォールバックする。
+
+    Args:
+        html_content: 一覧ページのHTMLバイト列。
+
+    Returns:
+        重複を除いた記事詳細URLのリスト。
+    """
+    article_urls: list[str] = []
+    seen: set[str] = set()
+
+    page_props = _extract_next_page_props(html_content)
+    news_list = page_props.get("newsListData")
+    if isinstance(news_list, list):
+        for item in news_list:
+            if not isinstance(item, dict):
+                continue
+            news_id = item.get("id")
+            if isinstance(news_id, str) and news_id:
+                url = f"{_SITE_ORIGIN}{_NEWS_DETAIL_PREFIX}{news_id}"
+                if url not in seen:
+                    seen.add(url)
+                    article_urls.append(url)
+
+    if article_urls:
+        return article_urls
+
+    soup = BeautifulSoup(html_content, features="lxml")
+    for link_tag in soup.find_all("a", href=True):
+        href = str(link_tag["href"])
+        if not href.startswith(_NEWS_DETAIL_PREFIX):
+            continue
+        url = f"{_SITE_ORIGIN}{href}"
+        if url not in seen:
+            seen.add(url)
+            article_urls.append(url)
+
+    return article_urls
+
+
 def get_schedule_list(
     start_page: int,
     end_page: int,
@@ -121,60 +196,39 @@ def get_schedule_list(
     for page in range(start_page, end_page + 1):
         url = f"{_SITE_ORIGIN}/news/all/pages/{page}"
         result = requests.get(url, timeout=_LIST_TIMEOUT_SECONDS)
-        soup = BeautifulSoup(result.content, features="lxml")
-        articles = list(soup.find_all("div", {"class": "css-izgksv"}))
-        if not articles:
-            articles.extend(_fallback_article_divs(soup))
+        result.raise_for_status()
+        article_urls = _extract_article_urls_from_list_html(result.content)
 
-        for article in articles:
-            link_tag = article.find_parent("a", href=True)
-            if not link_tag:
-                continue
-            article_url = f"{_SITE_ORIGIN}{link_tag['href']}"
+        for article_url in article_urls:
             event_time, event_name, event_link = get_schedule_info(article_url)
-            if event_time and event_name:
+            if event_time and event_name and event_link:
                 schedule_list.append((event_time, event_name, event_link, article_url))
             time.sleep(_SCRAPE_WAIT_SECONDS)
 
     return schedule_list
 
 
-def _fallback_article_divs(soup: BeautifulSoup) -> list[Tag]:
-    """クラス名が動的な場合の記事divフォールバック.
-
-    Returns:
-        記事とみなしたdiv要素.
-    """
-    articles: list[Tag] = []
-    for div in soup.find_all("div"):
-        classes = div.get("class")
-        if not classes or not any("css-" in cls for cls in classes):
-            continue
-        if div.find_parent("a", href=True):
-            articles.append(div)
-    return articles
-
-
 def fetch_news_detail_json(article_url: str) -> dict[str, object]:
-    """ニュース詳細ページが内部で叩いているJSON APIからデータを取得する.
+    """ニュース詳細ページの `__NEXT_DATA__` から記事データを取得する.
 
-    例: https://mihowatanabe.jp/news/detail/{id}
-         -> https://mihowatanabe.jp/api/news/{id}/fc-server
+    同一URLへの重複リクエストを避けるため、取得結果はメモリ上にキャッシュする。
 
     Args:
         article_url: ニュース詳細ページのURL。
 
     Returns:
-        APIが返すJSONオブジェクト。
+        記事データのJSONオブジェクト (`newsDataForFree`)。
     """
-    parsed = urllib.parse.urlparse(article_url)
-    news_id = parsed.path.rstrip("/").split("/")[-1]
-    api_url = f"{_SITE_ORIGIN}/api/news/{news_id}/fc-server"
-    resp = requests.get(api_url, timeout=_REQUEST_TIMEOUT_SECONDS)
+    if article_url in _NEXT_DATA_CACHE:
+        return _NEXT_DATA_CACHE[article_url]
+
+    resp = requests.get(article_url, timeout=_REQUEST_TIMEOUT_SECONDS)
     resp.raise_for_status()
-    payload = resp.json()
-    if isinstance(payload, dict):
-        return payload
+    page_props = _extract_next_page_props(resp.content)
+    news_data = page_props.get("newsDataForFree")
+    if isinstance(news_data, dict):
+        _NEXT_DATA_CACHE[article_url] = news_data
+        return news_data
     return {}
 
 
@@ -598,10 +652,10 @@ def _parse_md_hour_only(
 
 
 _SCHEDULE_PARSERS: tuple[_ScheduleParser, ...] = (
-    _parse_md_hour_minute,
     _parse_ymd_range,
     _parse_ymd_start,
     _parse_md_range,
+    _parse_md_hour_minute,
     _parse_md_start,
     _parse_md_hour_only,
 )
