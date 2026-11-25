@@ -33,6 +33,7 @@
 - **`--start-page` / `--end-page` / `--since-date`**: 取得する一覧ページ範囲（デフォルト `1`〜`1`）や登録対象の最小日付（`YYYY-MM-DD`）を指定して過去分をバックフィル登録できるオプション。また、過去記事を再解析する際にも年推定が狂わないよう、`_target_year_for_month()` は記事の公開日（`publishTime`）を基準日（`base_date`）として西暦年を推定する。
 - **`tendo.singleton.SingleInstance()`**: バッチの多重起動を防ぐ。
 - **GitHub Actions による定期実行**: 本番環境では GitHub Actions（`.github/workflows/sync-calendar.yml`）の `schedule`（`11 2 * * *`）および `workflow_dispatch` によって `uv run --frozen --no-dev miho-watanabe-calendar`（`miho_watanabe_calendar.main:main`）が定期実行される。`main(argv: list[str] | None = None)` のシグネチャと `src` レイアウトを維持すること。
+- **GitHub Actions のバージョン指定ルール**: `.github/workflows/*.yml` で外部 Action（`uses:`）を指定する際は、メジャーバージョンタグ（`@v7` など）ではなく、**その時点の最新安定バージョンをパッチバージョンまで明示（例: `actions/checkout@v7.0.1`, `astral-sh/setup-uv@v10.4.0`, `dependabot/fetch-metadata@v3.1.0`）して記載する**こと。ワークフローの新規作成・更新時は、既存ファイルを含めすべての Action が最新安定バージョンになっているか確認する。
 
 ---
 
