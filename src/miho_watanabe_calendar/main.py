@@ -56,12 +56,14 @@ class _ScheduleParser(Protocol):
         line_text: str,
         *,
         hour12: bool,
+        base_date: dt.date | None = None,
     ) -> tuple[dt.datetime, dt.datetime] | None:
         """1行を解析する.
 
         Args:
             line_text: 正規化済みの行.
             hour12: 12時間表記として扱うなら True.
+            base_date: 年推定の基準日.
 
         Returns:
             開始と終了日時. 不一致なら None.
@@ -315,17 +317,17 @@ def get_schedule_info(
     body_rich = body_rich_raw if isinstance(body_rich_raw, dict) else {}
     lines = extract_text_lines_from_body_rich(body_rich)
 
+    publish_date = _parse_publish_date(data.get("publishTime"))
     for line in lines:
         event_time = _parse_full_date(line)
         if event_time:
             break
 
-    target_year = dt.datetime.now(tz=_JST).year
     if event_time is None:
-        event_time = _parse_month_day_with_year(lines, target_year)
+        event_time = _parse_month_day_with_year(lines, publish_date)
 
-    if event_time is None:
-        event_time = _parse_publish_time(data.get("publishTime"))
+    if event_time is None and publish_date is not None:
+        event_time = publish_date.isoformat()
 
     parsed = urllib.parse.urlparse(article_url)
     event_link = parsed.path or "/news/detail/unknown"
@@ -334,7 +336,10 @@ def get_schedule_info(
     return event_time, event_name_text, event_link
 
 
-def _parse_month_day_with_year(lines: list[str], target_year: int) -> str | None:
+def _parse_month_day_with_year(
+    lines: list[str],
+    base_date: dt.date | None = None,
+) -> str | None:
     """年なしの月日表記から日付を組み立てる.
 
     Returns:
@@ -345,15 +350,16 @@ def _parse_month_day_with_year(lines: list[str], target_year: int) -> str | None
         if match:
             month = int(match.group(1))
             day = int(match.group(2))
-            return f"{target_year}-{month:02d}-{day:02d}"
+            target_year = _target_year_for_month(month, base_date)
+            return f"{target_year:04d}-{month:02d}-{day:02d}"
     return None
 
 
-def _parse_publish_time(publish_time: object) -> str | None:
-    """PublishTime をフォールバック日付として使う.
+def _parse_publish_date(publish_time: object) -> dt.date | None:
+    """PublishTime を日付オブジェクトへ変換する.
 
     Returns:
-        ISO日付. 使えなければ None.
+        日付オブジェクト. 使えなければ None.
     """
     if not isinstance(publish_time, str) or not re.match(
         r"\d{4}\.\d{1,2}\.\d{1,2}",
@@ -361,7 +367,7 @@ def _parse_publish_time(publish_time: object) -> str | None:
     ):
         return None
     year, month, day = publish_time.split(".")
-    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    return dt.date(int(year), int(month), int(day))
 
 
 def _now_jst() -> dt.datetime:
@@ -373,15 +379,22 @@ def _now_jst() -> dt.datetime:
     return dt.datetime.now(tz=_JST)
 
 
-def _target_year_for_month(month: int) -> int:
+def _target_year_for_month(
+    month: int,
+    base_date: dt.date | None = None,
+) -> int:
     """月だけから掲載年を推定する.
+
+    Args:
+        month: 対象月.
+        base_date: 基準日. None なら現在日時を使う.
 
     Returns:
         推定した西暦年.
     """
-    now = _now_jst()
-    current_year = now.year
-    current_month = now.month
+    ref_date = base_date if base_date is not None else _now_jst().date()
+    current_year = ref_date.year
+    current_month = ref_date.month
     if current_month >= _YEAR_CROSS_MONTH and month <= _FIRST_HALF_MAX_MONTH:
         return current_year + 1
     if current_month <= _FIRST_HALF_MAX_MONTH and month >= _YEAR_CROSS_MONTH:
@@ -461,12 +474,14 @@ def _parse_md_hour_minute(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """`8/28 25:00` 形式を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
@@ -482,7 +497,7 @@ def _parse_md_hour_minute(
     day = int(match.group(2))
     hour = int(match.group(3))
     minute = int(match.group(4))
-    target_year = _target_year_for_month(month)
+    target_year = _target_year_for_month(month, base_date)
     if hour >= _HOURS_PER_DAY:
         hour -= _HOURS_PER_DAY
         day += 1
@@ -500,16 +515,19 @@ def _parse_ymd_range(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """年月日と開始・終了時刻が揃った行を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
     """
+    del base_date
     match = re.search(
         r"(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)~(\d+):(\d+)",
         line_text,
@@ -533,16 +551,19 @@ def _parse_ymd_start(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """年月日と開始時刻だけの行を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
     """
+    del base_date
     match = re.search(r"(\d{4})/(\d+)/(\d+).+?(\d+):(\d+)", line_text)
     if match is None:
         return None
@@ -564,12 +585,14 @@ def _parse_md_range(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始・終了時刻の行を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
@@ -578,7 +601,7 @@ def _parse_md_range(
     if match is None:
         return None
     month = int(match[1])
-    target_year = _target_year_for_month(month)
+    target_year = _target_year_for_month(month, base_date)
     day = int(match[2])
     hour_start = _apply_hour12(int(match[3]), hour12=hour12)
     minute_start = int(match[4])
@@ -599,12 +622,14 @@ def _parse_md_start(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始時刻の行を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
@@ -613,7 +638,7 @@ def _parse_md_start(
     if match is None:
         return None
     month = int(match[1])
-    target_year = _target_year_for_month(month)
+    target_year = _target_year_for_month(month, base_date)
     day = int(match[2])
     hour_start = _apply_hour12(int(match[3]), hour12=hour12)
     minute_start = int(match[4])
@@ -630,12 +655,14 @@ def _parse_md_hour_only(
     line_text: str,
     *,
     hour12: bool,
+    base_date: dt.date | None = None,
 ) -> tuple[dt.datetime, dt.datetime] | None:
     """月日と開始時だけの行を解析する.
 
     Args:
         line_text: 正規化済みの行.
         hour12: 12時間表記として扱うなら True.
+        base_date: 年推定の基準日.
 
     Returns:
         開始と終了日時. 不一致なら None.
@@ -644,7 +671,7 @@ def _parse_md_hour_only(
     if match is None:
         return None
     month = int(match[1])
-    target_year = _target_year_for_month(month)
+    target_year = _target_year_for_month(month, base_date)
     day = int(match[2])
     hour_start = _apply_hour12(int(match[3]), hour12=hour12)
     event_start = over_24h_datetime(target_year, month, day, f"{hour_start:02d}:00")
@@ -693,6 +720,7 @@ def get_schedule_time(
 
     body_rich_raw = data.get("bodyRichText") or {}
     body_rich = body_rich_raw if isinstance(body_rich_raw, dict) else {}
+    publish_date = _parse_publish_date(data.get("publishTime"))
     event_times: dict[str, tuple[dt.datetime, dt.datetime]] = {}
     processed_lines: set[str] = set()
 
@@ -704,7 +732,7 @@ def get_schedule_time(
         hour12 = _has_hour12_flag(line_text)
         parsed = None
         for parse in _SCHEDULE_PARSERS:
-            parsed = parse(line_text, hour12=hour12)
+            parsed = parse(line_text, hour12=hour12, base_date=publish_date)
             if parsed is not None:
                 break
         if parsed is None:
@@ -1024,15 +1052,14 @@ def _add_or_skip_event(
     )
 
 
-def main(argv: list[str] | None = None) -> None:
-    """ニュース記事からスケジュールを取得しカレンダーへ反映する.
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """コマンドライン引数パーサーを生成する.
 
-    Args:
-        argv: コマンドライン引数。None なら sys.argv を使う。
+    Returns:
+        設定済みの ArgumentParser.
     """
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
-        description="Googleカレンダーへの追加を防ぐモードを設定します。",
+        description="渡邉美穂さんのスケジュールをGoogleカレンダーへ同期します。",
     )
     parser.add_argument(
         "--no-calendar",
@@ -1044,12 +1071,40 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="テスト用にランダムなeventIdを使用します。",
     )
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--start-page",
+        type=int,
+        default=1,
+        help="取得開始ページ番号 (デフォルト: 1)。",
+    )
+    parser.add_argument(
+        "--end-page",
+        type=int,
+        default=1,
+        help="取得終了ページ番号 (デフォルト: 1)。",
+    )
+    parser.add_argument(
+        "--since-date",
+        type=str,
+        default=None,
+        help="登録対象の最小日付 (YYYY-MM-DD)。指定日未満はスキップします。",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    """ニュース記事からスケジュールを取得しカレンダーへ反映する.
+
+    Args:
+        argv: コマンドライン引数。None なら sys.argv を使う。
+    """
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    args = _build_arg_parser().parse_args(argv)
     singleton.SingleInstance()
 
     calendar_id = os.environ["CALENDAR_ID_MW"]
     service = build_calendar_api()
-    schedule_list = get_schedule_list(1, 1)
+    schedule_list = get_schedule_list(args.start_page, args.end_page)
     ctx = CalendarSyncContext(
         service=service,
         calendar_id=calendar_id,
@@ -1061,6 +1116,8 @@ def main(argv: list[str] | None = None) -> None:
     for event_time, event_name, _event_link, article_url in schedule_list:
         event_times = get_schedule_time(article_url)
         if not event_times:
+            if args.since_date and event_time < args.since_date:
+                continue
             _add_or_skip_event(
                 ctx,
                 CalendarEventDraft(
@@ -1076,16 +1133,19 @@ def main(argv: list[str] | None = None) -> None:
             continue
 
         for event_start_time, event_end_time in event_times:
+            event_day_str = event_start_time.strftime("%Y-%m-%d")
+            if args.since_date and event_day_str < args.since_date:
+                continue
             _add_or_skip_event(
                 ctx,
                 CalendarEventDraft(
                     summary=event_name,
-                    event_day=event_start_time.strftime("%Y-%m-%d"),
+                    event_day=event_day_str,
                     start_time=event_start_time,
                     end_time=event_end_time,
                     event_link=article_url,
                 ),
-                event_start_time.strftime("%Y-%m-%d"),
+                event_day_str,
                 event_start_time.strftime("%H:%M"),
             )
 

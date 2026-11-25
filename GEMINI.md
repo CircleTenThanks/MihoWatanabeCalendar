@@ -27,9 +27,10 @@
 3. **HTTP 409 Conflict のハンドリング（`add_info_to_calendar`）**:
    - 万が一 `search_events` の検索範囲外などで同一 `eventId` が既に存在していた場合、Google Calendar API が返す `HttpError`（ステータス `409`）をキャッチして正常スキップとして扱う。
 
-### 4. 安全なローカル検証オプションと多重起動防止
+### 4. 安全なローカル検証・過去分バックフィルオプションと多重起動防止
 - **`--no-calendar`**: Googleカレンダーへの書き込み（`insert`）をスキップし、スクレイピングと日時解析結果のログ出力のみを行うドライラン用フラグ。
 - **`--test-run`**: テスト用カレンダー等で検証する際、固定ハッシュではなくランダムなUUIDを `eventId` に使うフラグ。
+- **`--start-page` / `--end-page` / `--since-date`**: 取得する一覧ページ範囲（デフォルト `1`〜`1`）や登録対象の最小日付（`YYYY-MM-DD`）を指定して過去分をバックフィル登録できるオプション。また、過去記事を再解析する際にも年推定が狂わないよう、`_target_year_for_month()` は記事の公開日（`publishTime`）を基準日（`base_date`）として西暦年を推定する。
 - **`tendo.singleton.SingleInstance()`**: バッチの多重起動を防ぐ。
 - **親リポジトリ（RenderWrapper）連携**: 本番の Render.com CRON JOB では親リポジトリ `RenderWrapper` から `miho_watanabe_calendar.main:main` が引数なしで呼び出される。`main(argv: list[str] | None = None)` のシグネチャと `src` レイアウトを維持すること。
 
